@@ -1,16 +1,18 @@
-import type { Metadata } from "next";
-import type { ReactNode } from "react";
-import "./globals.css";
+export const metadata = {
+  title: 'orbit.r — Explore niche hubs in your orbit',
+  description: 'Explore niche hubs in your orbit',
+}
 
-export const metadata: Metadata = {
-  title: "orbit.r — Explore niche hubs in your orbit",
-  description: "Explore niche hubs in your orbit",
-};
+import './globals.css'
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body className="antialiased">{children}</body>
     </html>
-  );
+  )
 }

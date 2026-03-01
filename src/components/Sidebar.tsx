@@ -60,6 +60,7 @@ export default function Sidebar({ activeNav, setActiveNav, onLogout }: SidebarPr
     { id: "dash", label: "dash", icon: <GridIcon /> },
   ];
 
+  /** Placeholder; later from Supabase user_hobbies + hobbies for current user. */
   const hubs = [
     { id: "resident-evil", label: "Resident Evil" },
     { id: "jujutsu-kaisen", label: "Jujutsu Kaisen" },
@@ -109,6 +110,7 @@ export default function Sidebar({ activeNav, setActiveNav, onLogout }: SidebarPr
       </nav>
 
       <div className="px-2 pb-4">
+        {/* Supabase: auth.signOut() then call onLogout() to return to login view. */}
         <button
           onClick={onLogout}
           className="flex flex-col items-center gap-1 w-full py-3 rounded-xl transition-all hover:opacity-80"

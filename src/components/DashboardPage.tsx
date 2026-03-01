@@ -39,12 +39,14 @@ function GoalCard({ label, current, total }: { label: string; current: number; t
 export default function DashboardPage({ onLogout }: Props) {
   const [activeNav, setActiveNav] = useState("dash");
 
+  /** Placeholder; later from Supabase (e.g. goals table if added). */
   const goals = [
     { label: "Complete Honkai Star Rail story", current: 3, total: 5 },
     { label: "Read 12 manga volumes", current: 8, total: 12 },
     { label: "Finish Spy x Family anime", current: 2, total: 3 },
   ];
 
+  /** Placeholder; later from Supabase lists + list_items for current user. */
   const lists = ["To Read", "Must Play"];
 
   return (
@@ -54,6 +56,7 @@ export default function DashboardPage({ onLogout }: Props) {
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto px-6 py-6">
 
+          {/* Profile: later from public.users (display_name → name, handle, avatar_url) + count from user_hobbies for "Hubs joined". */}
           <div className="rounded-2xl overflow-hidden mb-4" style={{ border: "1px solid var(--border)" }}>
             <div className="h-44 relative"
               style={{ background: "linear-gradient(135deg, #1e1b4b 0%, #312e81 30%, #4338ca 60%, #7c3aed 100%)" }}>
@@ -105,6 +108,7 @@ export default function DashboardPage({ onLogout }: Props) {
             ))}
           </div>
 
+          {/* Posts: later from public.posts (join users, hobbies); post_type, body, optional item_id. */}
           <h3 className="text-base font-bold mb-4" style={{ fontFamily: "Syne, sans-serif" }}>My Posts</h3>
           <div className="space-y-3">
             {[
@@ -175,6 +179,7 @@ export default function DashboardPage({ onLogout }: Props) {
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-bold" style={{ fontFamily: "Syne, sans-serif" }}>Hubs</h3>
           </div>
+          {/* Later: list from user_hobbies + hobbies for current user. */}
         </div>
       </aside>
     </div>

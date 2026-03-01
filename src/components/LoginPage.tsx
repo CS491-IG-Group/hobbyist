@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import OrbitLogo from "./OrbitLogo";
+import { supabase } from "@/lib/supabase";
 
 interface Props {
   onLogin: () => void;
@@ -10,6 +11,39 @@ export default function LoginPage({ onLogin }: Props) {
   const [tab, setTab] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const clearError = () => setError(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      if (tab === "login") {
+        const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+        if (err) {
+          setError(err.message);
+          return;
+        }
+        onLogin();
+      } else {
+        const { data, error: err } = await supabase.auth.signUp({ email, password });
+        if (err) {
+          setError(err.message);
+          return;
+        }
+        if (data.user && !data.session) {
+          setError("Check your email to confirm your account.");
+          return;
+        }
+        onLogin();
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4"
@@ -27,9 +61,11 @@ export default function LoginPage({ onLogin }: Props) {
       <div className="w-full max-w-md rounded-2xl p-8"
         style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
 
+        <form onSubmit={handleSubmit}>
         <div className="flex rounded-xl mb-6 p-1" style={{ background: "var(--surface2)" }}>
           <button
-            onClick={() => setTab("login")}
+            type="button"
+            onClick={() => { setTab("login"); clearError(); }}
             className="flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200"
             style={{
               background: tab === "login" ? "var(--gradient-btn)" : "transparent",
@@ -38,7 +74,8 @@ export default function LoginPage({ onLogin }: Props) {
             Log In
           </button>
           <button
-            onClick={() => setTab("signup")}
+            type="button"
+            onClick={() => { setTab("signup"); clearError(); }}
             className="flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200"
             style={{
               background: tab === "signup" ? "var(--gradient-btn)" : "transparent",
@@ -49,6 +86,7 @@ export default function LoginPage({ onLogin }: Props) {
         </div>
 
         <div className="space-y-3">
+          {/* Email: used with Supabase Auth (signInWithPassword / signUp). */}
           <div className="flex items-center gap-3 rounded-xl px-4 py-3"
             style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
@@ -60,12 +98,13 @@ export default function LoginPage({ onLogin }: Props) {
               type="email"
               placeholder="Email"
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={e => { setEmail(e.target.value); clearError(); }}
               className="flex-1 bg-transparent outline-none text-sm"
               style={{ color: "var(--text)", caretColor: "#a78bfa" }}
             />
           </div>
 
+          {/* Password: used with Supabase Auth. */}
           <div className="flex items-center gap-3 rounded-xl px-4 py-3"
             style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
@@ -77,7 +116,7 @@ export default function LoginPage({ onLogin }: Props) {
               type="password"
               placeholder="Password"
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onChange={e => { setPassword(e.target.value); clearError(); }}
               className="flex-1 bg-transparent outline-none text-sm"
               style={{ color: "var(--text)", caretColor: "#a78bfa" }}
             />
@@ -86,19 +125,28 @@ export default function LoginPage({ onLogin }: Props) {
 
         {tab === "login" && (
           <div className="flex justify-end mt-3">
+            {/* Supabase: auth.resetPasswordForEmail(email). */}
             <button className="text-sm font-medium" style={{ color: "#a78bfa" }}>
               Forgot password?
             </button>
           </div>
         )}
 
+        {error && (
+          <p className="text-sm mt-3" style={{ color: "#f87171" }}>{error}</p>
+        )}
+
+        {/* On submit: call supabase.auth.signInWithPassword or signUp, then onLogin() to show dashboard. */}
         <button
-          onClick={onLogin}
-          className="w-full py-3.5 rounded-xl mt-5 text-sm font-semibold text-white transition-opacity hover:opacity-90 active:opacity-80"
+          type="submit"
+          disabled={loading}
+          className="w-full py-3.5 rounded-xl mt-5 text-sm font-semibold text-white transition-opacity hover:opacity-90 active:opacity-80 disabled:opacity-60 disabled:cursor-not-allowed"
           style={{ background: "var(--gradient-btn)" }}>
           {tab === "login" ? "Log In" : "Create Account"}
         </button>
+        </form>
 
+        {/* Supabase OAuth: signInWithOAuth({ provider: 'google' | 'discord' }). */}
         <div className="flex items-center gap-3 my-5">
           <div className="flex-1 h-px" style={{ background: "var(--border)" }} />
           <span className="text-xs" style={{ color: "var(--text-muted)" }}>Or continue with</span>
