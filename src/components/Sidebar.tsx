@@ -23,6 +23,17 @@ function HomeIcon() {
   );
 }
 
+function OrbitIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="3" />
+      <ellipse cx="12" cy="12" rx="10" ry="4" />
+      <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(60 12 12)" />
+      <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(120 12 12)" />
+    </svg>
+  );
+}
+
 function CompassIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -32,13 +43,11 @@ function CompassIcon() {
   );
 }
 
-function GridIcon() {
+function PersonIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="3" y="3" width="7" height="7" rx="1" />
-      <rect x="14" y="3" width="7" height="7" rx="1" />
-      <rect x="3" y="14" width="7" height="7" rx="1" />
-      <rect x="14" y="14" width="7" height="7" rx="1" />
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
     </svg>
   );
 }
@@ -55,12 +64,12 @@ function LogOutIcon() {
 
 export default function Sidebar({ activeNav, setActiveNav, onLogout }: SidebarProps) {
   const navItems: NavItem[] = [
+    { id: "orbit", label: "orbit", icon: <OrbitIcon /> },
     { id: "timeline", label: "timeline", icon: <HomeIcon /> },
     { id: "discover", label: "discover", icon: <CompassIcon /> },
-    { id: "dash", label: "dash", icon: <GridIcon /> },
+    { id: "profile", label: "profile", icon: <PersonIcon /> },
   ];
 
-  /** Placeholder; later from Supabase user_hobbies + hobbies for current user. */
   const hubs = [
     { id: "resident-evil", label: "Resident Evil" },
     { id: "jujutsu-kaisen", label: "Jujutsu Kaisen" },
@@ -110,7 +119,6 @@ export default function Sidebar({ activeNav, setActiveNav, onLogout }: SidebarPr
       </nav>
 
       <div className="px-2 pb-4">
-        {/* Supabase: auth.signOut() then call onLogout() to return to login view. */}
         <button
           onClick={onLogout}
           className="flex flex-col items-center gap-1 w-full py-3 rounded-xl transition-all hover:opacity-80"
