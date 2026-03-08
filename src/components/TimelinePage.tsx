@@ -12,7 +12,7 @@ const POSTS = [
         hubColor: "#3b82f6",
         time: "2m ago",
         text: "Just got back from a track day in my STI and nothing beats a perfectly executed apex. The car is an absolute weapon when you dial in the suspension right 🔧🏁",
-        image: null,
+        image: "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?w=800&auto=format&fit=crop",
         likes: 214,
         comments: 53,
         reposts: 28,
@@ -27,7 +27,7 @@ const POSTS = [
         hubColor: "#10b981",
         time: "15m ago",
         text: "Finally hit a 200kg deadlift after 2 years of consistent training. The grind is real but moments like this make it all worth it. Trust the process 💚",
-        image: null,
+        image: "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&auto=format&fit=crop",
         likes: 389,
         comments: 74,
         reposts: 45,
@@ -57,7 +57,7 @@ const POSTS = [
         hubColor: "#ec4899",
         time: "2h ago",
         text: "Dune Part 2 is a cinematic masterpiece. Villeneuve is operating on a completely different level. The IMAX experience was absolutely breathtaking 🎥✨",
-        image: null,
+        image: "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=800&auto=format&fit=crop",
         likes: 631,
         comments: 142,
         reposts: 97,
@@ -72,7 +72,7 @@ const POSTS = [
         hubColor: "#6366f1",
         time: "3h ago",
         text: "Golden hour in the mountains hit different this weekend. Shot on film with my Contax T2 — there is something about analog photography that digital just cannot replicate 🌄",
-        image: null,
+        image: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&auto=format&fit=crop",
         likes: 428,
         comments: 63,
         reposts: 51,
@@ -87,7 +87,7 @@ const POSTS = [
         hubColor: "#ef4444",
         time: "5h ago",
         text: "Made homemade ramen from scratch — 12 hours for the tonkotsu broth and worth every minute. The depth of flavor is insane compared to anything store bought 🍜🔥",
-        image: null,
+        image: "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=800&auto=format&fit=crop",
         likes: 295,
         comments: 67,
         reposts: 38,
@@ -174,6 +174,18 @@ function PostCard({ post }: { post: typeof POSTS[0] }) {
                 {post.text}
             </p>
 
+            {/* Image */}
+            {post.image && (
+                <div className="rounded-xl overflow-hidden mb-4" style={{ maxHeight: "320px" }}>
+                    <img
+                        src={post.image}
+                        alt="post"
+                        className="w-full object-cover"
+                        style={{ maxHeight: "320px" }}
+                    />
+                </div>
+            )}
+
             {/* Divider */}
             <div className="h-px mb-3" style={{ background: "var(--border)" }} />
 
@@ -203,8 +215,121 @@ function PostCard({ post }: { post: typeof POSTS[0] }) {
     );
 }
 
+const HUBS_LIST = ["Cars", "Fitness", "Technology", "Movies", "Photography", "Cooking", "Gaming"];
+
+function CreatePostModal({ onClose }: { onClose: () => void }) {
+    const [text, setText] = React.useState("");
+    const [selectedHub, setSelectedHub] = React.useState("");
+    const maxChars = 280;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: "rgba(0,0,0,0.7)" }}
+            onClick={onClose}>
+            <div className="w-full max-w-lg rounded-2xl overflow-hidden"
+                onClick={e => e.stopPropagation()}
+                style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-4"
+                    style={{ borderBottom: "1px solid var(--border)" }}>
+                    <h2 className="text-base font-bold" style={{ fontFamily: "Syne, sans-serif" }}>Create Post</h2>
+                    <button onClick={onClose} style={{ color: "var(--text-muted)" }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                    </button>
+                </div>
+
+                {/* Body */}
+                <div className="p-5">
+                    {/* User row */}
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0"
+                            style={{ background: "linear-gradient(135deg, #1e1b4b, #4c1d95)" }}>
+                            ✨
+                        </div>
+                        <div>
+                            <p className="text-sm font-semibold">You</p>
+                            <p className="text-xs" style={{ color: "var(--text-muted)" }}>Posting to orbit.r</p>
+                        </div>
+                    </div>
+
+                    {/* Text area */}
+                    <textarea
+                        placeholder="What's on your mind? Share with your hubs..."
+                        value={text}
+                        onChange={e => setText(e.target.value.slice(0, maxChars))}
+                        rows={4}
+                        className="w-full bg-transparent outline-none text-sm resize-none leading-relaxed"
+                        style={{ color: "var(--text)", caretColor: "#a78bfa" }}
+                    />
+
+                    {/* Char count */}
+                    <div className="flex justify-end mb-4">
+                        <span className="text-xs" style={{ color: text.length > maxChars * 0.8 ? "#f59e0b" : "var(--text-muted)" }}>
+                            {text.length}/{maxChars}
+                        </span>
+                    </div>
+
+                    {/* Hub selector */}
+                    <div className="mb-5">
+                        <p className="text-xs font-semibold mb-2" style={{ color: "var(--text-muted)" }}>Post to hub</p>
+                        <div className="flex flex-wrap gap-2">
+                            {HUBS_LIST.map(hub => (
+                                <button key={hub}
+                                    onClick={() => setSelectedHub(selectedHub === hub ? "" : hub)}
+                                    className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
+                                    style={{
+                                        background: selectedHub === hub ? "var(--gradient-btn)" : "var(--surface2)",
+                                        color: selectedHub === hub ? "#fff" : "var(--text-muted)",
+                                        border: `1px solid ${selectedHub === hub ? "transparent" : "var(--border)"}`,
+                                    }}>
+                                    {hub}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Divider */}
+                    <div className="h-px mb-4" style={{ background: "var(--border)" }} />
+
+                    {/* Actions */}
+                    <div className="flex items-center justify-between">
+                        <div className="flex gap-3">
+                            <button style={{ color: "var(--text-muted)" }} title="Add image">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                                    <circle cx="8.5" cy="8.5" r="1.5" />
+                                    <polyline points="21 15 16 10 5 21" />
+                                </svg>
+                            </button>
+                            <button style={{ color: "var(--text-muted)" }} title="Add emoji">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <circle cx="12" cy="12" r="10" />
+                                    <path d="M8 13s1.5 2 4 2 4-2 4-2" />
+                                    <line x1="9" y1="9" x2="9.01" y2="9" />
+                                    <line x1="15" y1="9" x2="15.01" y2="9" />
+                                </svg>
+                            </button>
+                        </div>
+                        <button
+                            onClick={onClose}
+                            disabled={!text.trim() || !selectedHub}
+                            className="px-5 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                            style={{ background: "var(--gradient-btn)" }}>
+                            Post
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export default function TimelinePage() {
     const [activeFilter, setActiveFilter] = useState("All");
+    const [showCompose, setShowCompose] = useState(false);
 
     const filtered = activeFilter === "All"
         ? POSTS
@@ -215,7 +340,7 @@ export default function TimelinePage() {
 
             {/* Feed */}
             <div className="flex-1 overflow-y-auto">
-                <div className="max-w-2xl mx-auto px-4 py-6">
+                <div className="px-6 py-6">
 
                     {/* Header */}
                     <h1 className="text-xl font-bold mb-5" style={{ fontFamily: "Syne, sans-serif" }}>Timeline</h1>
@@ -237,23 +362,6 @@ export default function TimelinePage() {
                         ))}
                     </div>
 
-                    {/* Create post box */}
-                    <div className="rounded-2xl p-4 mb-5 flex items-center gap-3"
-                        style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-                        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0"
-                            style={{ background: "linear-gradient(135deg, #1e1b4b, #4c1d95)" }}>
-                            ✨
-                        </div>
-                        <div className="flex-1 rounded-xl px-4 py-2.5 text-sm cursor-text"
-                            style={{ background: "var(--surface2)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
-                            Share something with your hubs...
-                        </div>
-                        <button className="px-4 py-2 rounded-xl text-xs font-semibold text-white shrink-0"
-                            style={{ background: "var(--gradient-btn)" }}>
-                            Post
-                        </button>
-                    </div>
-
                     {/* Posts */}
                     <div className="space-y-3">
                         {filtered.map(post => (
@@ -261,7 +369,25 @@ export default function TimelinePage() {
                         ))}
                     </div>
                 </div>
+
+                {/* Floating compose button — fixed, sits at bottom of feed between trending sidebar (w-64) and goals sidebar (w-72) */}
+                <button
+                    onClick={() => setShowCompose(true)}
+                    className="fixed bottom-8 z-40 w-14 h-14 rounded-full flex items-center justify-center text-white transition-all hover:scale-110 active:scale-95"
+                    style={{
+                        right: "calc(256px + 48px)",
+                        background: "var(--gradient-btn)",
+                        boxShadow: "0 4px 24px rgba(139,92,246,0.4)",
+                    }}>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                </button>
             </div>
+
+            {/* Create post modal */}
+            {showCompose && <CreatePostModal onClose={() => setShowCompose(false)} />}
 
             {/* Right sidebar */}
             <aside className="hidden lg:block w-64 shrink-0 sticky top-0 h-screen overflow-y-auto p-4"
