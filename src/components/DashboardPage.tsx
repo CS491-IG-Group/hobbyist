@@ -5,6 +5,7 @@ import DiscoverPage from "./DiscoverPage";
 import TimelinePage from "./TimelinePage";
 import NicheFeed from "./NicheFeed";
 import ProfilePage from "./ProfilePage";
+import NotificationsPage from "./NotificationsPage";
 
 interface Props {
   onLogout: () => void;
@@ -55,6 +56,7 @@ function GoalCard({ label, current, total, onIncrement, onDecrement, onDelete }:
 
 export default function DashboardPage({ onLogout }: Props) {
   const [activeNav, setActiveNav] = useState("timeline");
+  const [unreadCount, setUnreadCount] = useState(3);
 
   const [goals, setGoals] = useState([
     { id: 1, label: "Run 5km three times a week", current: 2, total: 3 },
@@ -89,7 +91,7 @@ export default function DashboardPage({ onLogout }: Props) {
 
   return (
     <div className="flex min-h-screen" style={{ background: "var(--bg)" }}>
-      <Sidebar activeNav={activeNav} setActiveNav={setActiveNav} onLogout={onLogout} />
+      <Sidebar activeNav={activeNav} setActiveNav={setActiveNav} onLogout={onLogout} unreadCount={unreadCount} />
 
       <main className="flex-1 overflow-y-auto">
         {activeNav === "timeline" ? (
@@ -100,6 +102,8 @@ export default function DashboardPage({ onLogout }: Props) {
           <NicheFeed />
         ) : activeNav === "profile" ? (
           <ProfilePage />
+        ) : activeNav === "notifications" ? (
+          <NotificationsPage />
         ) : null}
       </main>
 

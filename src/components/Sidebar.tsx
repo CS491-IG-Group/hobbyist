@@ -12,6 +12,7 @@ interface SidebarProps {
   activeNav: string;
   setActiveNav: (id: string) => void;
   onLogout: () => void;
+  unreadCount?: number;
 }
 
 function HomeIcon() {
@@ -19,17 +20,6 @@ function HomeIcon() {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
       <polyline points="9 22 9 12 15 12 15 22" />
-    </svg>
-  );
-}
-
-function OrbitIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="12" cy="12" r="3" />
-      <ellipse cx="12" cy="12" rx="10" ry="4" />
-      <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(60 12 12)" />
-      <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(120 12 12)" />
     </svg>
   );
 }
@@ -43,11 +33,30 @@ function CompassIcon() {
   );
 }
 
+function OrbitIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="3" />
+      <ellipse cx="12" cy="12" rx="10" ry="4" />
+      <line x1="12" y1="2" x2="12" y2="22" />
+    </svg>
+  );
+}
+
 function PersonIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
       <circle cx="12" cy="7" r="4" />
+    </svg>
+  );
+}
+
+function BellIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
     </svg>
   );
 }
@@ -62,23 +71,20 @@ function LogOutIcon() {
   );
 }
 
-export default function Sidebar({ activeNav, setActiveNav, onLogout }: SidebarProps) {
+export default function Sidebar({ activeNav, setActiveNav, onLogout, unreadCount = 0 }: SidebarProps) {
   const navItems: NavItem[] = [
-    { id: "orbit", label: "orbit", icon: <OrbitIcon /> },
     { id: "timeline", label: "timeline", icon: <HomeIcon /> },
+    { id: "orbit", label: "orbit", icon: <OrbitIcon /> },
     { id: "discover", label: "discover", icon: <CompassIcon /> },
+    { id: "notifications", label: "alerts", icon: <BellIcon /> },
     { id: "profile", label: "profile", icon: <PersonIcon /> },
-  ];
-
-  const hubs = [
-    { id: "resident-evil", label: "Resident Evil" },
-    { id: "jujutsu-kaisen", label: "Jujutsu Kaisen" },
   ];
 
   return (
     <aside className="flex flex-col h-screen sticky top-0 w-[100px] shrink-0"
       style={{ background: "var(--bg)", borderRight: "1px solid var(--border)" }}>
 
+      {/* Logo */}
       <div className="flex flex-col items-center pt-5 pb-4">
         <OrbitLogo size={40} />
         <span className="text-xs font-bold mt-1" style={{ color: "#a78bfa", fontFamily: "Syne, sans-serif" }}>
@@ -86,38 +92,32 @@ export default function Sidebar({ activeNav, setActiveNav, onLogout }: SidebarPr
         </span>
       </div>
 
+      {/* Nav */}
       <nav className="flex flex-col items-center gap-1 px-2 flex-1">
         {navItems.map(item => (
           <button
             key={item.id}
             onClick={() => setActiveNav(item.id)}
-            className="flex flex-col items-center gap-1 w-full py-3 px-2 rounded-xl transition-all"
+            className="relative flex flex-col items-center gap-1 w-full py-3 px-2 rounded-xl transition-all"
             style={{
               background: activeNav === item.id ? "var(--surface2)" : "transparent",
               color: activeNav === item.id ? "#a78bfa" : "var(--text-dim)",
             }}>
             {item.icon}
             <span className="text-[10px] font-medium">{item.label}</span>
+            {/* Unread badge on bell */}
+            {item.id === "notifications" && unreadCount > 0 && (
+              <span className="absolute top-2 right-2.5 w-4 h-4 rounded-full text-[9px] font-bold text-white flex items-center justify-center"
+                style={{ background: "#ec4899" }}>
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
           </button>
         ))}
 
-        <div className="w-full border-t mt-2 pt-2" style={{ borderColor: "var(--border)" }}>
-          {hubs.map(hub => (
-            <button key={hub.id}
-              className="flex flex-col items-center gap-1 w-full py-2.5 rounded-xl transition-all hover:opacity-80">
-              <div className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center text-xs"
-                style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>
-                {hub.label.slice(0, 2)}
-              </div>
-              <span className="text-[9px] text-center leading-tight w-full truncate px-1"
-                style={{ color: "var(--text-muted)" }}>
-                {hub.label}
-              </span>
-            </button>
-          ))}
-        </div>
       </nav>
 
+      {/* Log out */}
       <div className="px-2 pb-4">
         <button
           onClick={onLogout}
