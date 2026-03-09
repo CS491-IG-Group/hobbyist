@@ -1,5 +1,5 @@
 "use client";
-import React from "react";
+import React, { useState, useEffect } from "react";
 import OrbitLogo from "./OrbitLogo";
 
 interface NavItem {
@@ -71,7 +71,47 @@ function LogOutIcon() {
   );
 }
 
+function SunIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="5" />
+      <line x1="12" y1="1" x2="12" y2="3" />
+      <line x1="12" y1="21" x2="12" y2="23" />
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+      <line x1="1" y1="12" x2="3" y2="12" />
+      <line x1="21" y1="12" x2="23" y2="12" />
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </svg>
+  );
+}
+
 export default function Sidebar({ activeNav, setActiveNav, onLogout, unreadCount = 0 }: SidebarProps) {
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+
+  useEffect(() => {
+    const saved = localStorage.getItem("theme") as "dark" | "light" | null;
+    const initial = saved ?? "dark";
+    setTheme(initial);
+    document.documentElement.setAttribute("data-theme", initial);
+  }, []);
+
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    localStorage.setItem("theme", next);
+    document.documentElement.setAttribute("data-theme", next);
+  }
+
   const navItems: NavItem[] = [
     { id: "timeline", label: "timeline", icon: <HomeIcon /> },
     { id: "orbit", label: "orbit", icon: <OrbitIcon /> },
@@ -116,6 +156,17 @@ export default function Sidebar({ activeNav, setActiveNav, onLogout, unreadCount
         ))}
 
       </nav>
+
+      {/* Theme toggle */}
+      <div className="px-2">
+        <button
+          onClick={toggleTheme}
+          className="flex flex-col items-center gap-1 w-full py-3 rounded-xl transition-all hover:opacity-80"
+          style={{ color: "var(--text-dim)" }}>
+          {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+          <span className="text-[10px]">{theme === "dark" ? "light" : "dark"}</span>
+        </button>
+      </div>
 
       {/* Log out */}
       <div className="px-2 pb-4">

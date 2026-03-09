@@ -19,6 +19,16 @@
   --text-dim: #94a3b8;
 }
 
+[data-theme="light"] {
+  --bg: #f5f3ff;
+  --surface: #ffffff;
+  --surface2: #ede9fe;
+  --border: #d8d2f0;
+  --text: #1e1b4b;
+  --text-muted: #6b7280;
+  --text-dim: #7c7c99;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;

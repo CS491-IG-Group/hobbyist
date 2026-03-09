@@ -2,10 +2,17 @@
 import React, { useState } from "react";
 import Sidebar from "./Sidebar";
 import DiscoverPage from "./DiscoverPage";
+import CategoryPage from "./CategoryPage";
+import HubPage from "./HubPage";
 import TimelinePage from "./TimelinePage";
 import NicheFeed from "./NicheFeed";
 import ProfilePage from "./ProfilePage";
 import NotificationsPage from "./NotificationsPage";
+
+type SubPage =
+  | null
+  | { type: "category"; categoryId: string }
+  | { type: "hub"; categoryId: string; hubId: string };
 
 interface Props {
   onLogout: () => void;
@@ -56,7 +63,14 @@ function GoalCard({ label, current, total, onIncrement, onDecrement, onDelete }:
 
 export default function DashboardPage({ onLogout }: Props) {
   const [activeNav, setActiveNav] = useState("timeline");
+  const [subPage, setSubPage] = useState<SubPage>(null);
   const [unreadCount, setUnreadCount] = useState(3);
+
+  /** Wrap setActiveNav so we reset subPage when switching sections */
+  function handleNav(id: string) {
+    setActiveNav(id);
+    setSubPage(null);
+  }
 
   const [goals, setGoals] = useState([
     { id: 1, label: "Run 5km three times a week", current: 2, total: 3 },
@@ -91,13 +105,33 @@ export default function DashboardPage({ onLogout }: Props) {
 
   return (
     <div className="flex min-h-screen" style={{ background: "var(--bg)" }}>
-      <Sidebar activeNav={activeNav} setActiveNav={setActiveNav} onLogout={onLogout} unreadCount={unreadCount} />
+      <Sidebar activeNav={activeNav} setActiveNav={handleNav} onLogout={onLogout} unreadCount={unreadCount} />
 
       <main className="flex-1 overflow-y-auto">
         {activeNav === "timeline" ? (
           <TimelinePage />
         ) : activeNav === "discover" ? (
-          <DiscoverPage />
+          subPage?.type === "hub" ? (
+            <HubPage
+              categoryId={subPage.categoryId}
+              hubId={subPage.hubId}
+              onBack={() => setSubPage({ type: "category", categoryId: subPage.categoryId })}
+            />
+          ) : subPage?.type === "category" ? (
+            <CategoryPage
+              categoryId={subPage.categoryId}
+              onBack={() => setSubPage(null)}
+              onSelectHub={(hubId) =>
+                setSubPage({ type: "hub", categoryId: subPage.categoryId, hubId })
+              }
+            />
+          ) : (
+            <DiscoverPage
+              onSelectCategory={(categoryId) =>
+                setSubPage({ type: "category", categoryId })
+              }
+            />
+          )
         ) : activeNav === "orbit" ? (
           <NicheFeed />
         ) : activeNav === "profile" ? (
