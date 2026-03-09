@@ -4,6 +4,7 @@ import Sidebar from "./Sidebar";
 import DiscoverPage from "./DiscoverPage";
 import CategoryPage from "./CategoryPage";
 import HubPage from "./HubPage";
+import ItemDetailPage from "./ItemDetailPage";
 import TimelinePage from "./TimelinePage";
 import NicheFeed from "./NicheFeed";
 import ProfilePage from "./ProfilePage";
@@ -12,7 +13,8 @@ import NotificationsPage from "./NotificationsPage";
 type SubPage =
   | null
   | { type: "category"; categoryId: string }
-  | { type: "hub"; categoryId: string; hubId: string };
+  | { type: "hub"; categoryId: string; hubId: string }
+  | { type: "item"; categoryId: string; hubId: string; itemIndex: number };
 
 interface Props {
   onLogout: () => void;
@@ -105,17 +107,36 @@ export default function DashboardPage({ onLogout }: Props) {
 
   return (
     <div className="flex min-h-screen" style={{ background: "var(--bg)" }}>
-      <Sidebar activeNav={activeNav} setActiveNav={handleNav} onLogout={onLogout} unreadCount={unreadCount} />
+      <Sidebar
+        activeNav={activeNav}
+        setActiveNav={handleNav}
+        onLogout={onLogout}
+        unreadCount={unreadCount}
+        onSelectHub={(categoryId, hubId) => {
+          setActiveNav("discover");
+          setSubPage({ type: "hub", categoryId, hubId });
+        }}
+      />
 
       <main className="flex-1 overflow-y-auto">
         {activeNav === "timeline" ? (
           <TimelinePage />
         ) : activeNav === "discover" ? (
-          subPage?.type === "hub" ? (
+          subPage?.type === "item" ? (
+            <ItemDetailPage
+              categoryId={subPage.categoryId}
+              hubId={subPage.hubId}
+              itemIndex={subPage.itemIndex}
+              onBack={() => setSubPage({ type: "hub", categoryId: subPage.categoryId, hubId: subPage.hubId })}
+            />
+          ) : subPage?.type === "hub" ? (
             <HubPage
               categoryId={subPage.categoryId}
               hubId={subPage.hubId}
               onBack={() => setSubPage({ type: "category", categoryId: subPage.categoryId })}
+              onSelectItem={(itemIndex) =>
+                setSubPage({ type: "item", categoryId: subPage.categoryId, hubId: subPage.hubId, itemIndex })
+              }
             />
           ) : subPage?.type === "category" ? (
             <CategoryPage

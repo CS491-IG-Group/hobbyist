@@ -8,10 +8,19 @@ interface NavItem {
   icon: React.ReactNode;
 }
 
+interface JoinedHub {
+  categoryId: string;
+  hubId: string;
+  name: string;
+  emoji: string;
+  color: string;
+}
+
 interface SidebarProps {
   activeNav: string;
   setActiveNav: (id: string) => void;
   onLogout: () => void;
+  onSelectHub?: (categoryId: string, hubId: string) => void;
   unreadCount?: number;
 }
 
@@ -95,7 +104,12 @@ function MoonIcon() {
   );
 }
 
-export default function Sidebar({ activeNav, setActiveNav, onLogout, unreadCount = 0 }: SidebarProps) {
+const joinedHubs: JoinedHub[] = [
+  { categoryId: "gaming", hubId: "resident-evil", name: "Resident Evil", emoji: "🧟", color: "#6b0f1a" },
+  { categoryId: "music", hubId: "bad-bunny", name: "Bad Bunny", emoji: "🐰", color: "#10b981" },
+];
+
+export default function Sidebar({ activeNav, setActiveNav, onLogout, onSelectHub, unreadCount = 0 }: SidebarProps) {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
 
   useEffect(() => {
@@ -154,6 +168,29 @@ export default function Sidebar({ activeNav, setActiveNav, onLogout, unreadCount
             )}
           </button>
         ))}
+
+        {/* Divider */}
+        <div className="w-full px-4 my-3">
+          <div style={{ height: "1px", background: "rgba(255,255,255,0.15)" }} />
+        </div>
+
+        {/* Joined Hubs */}
+        <div className="flex flex-col items-center gap-1 w-full">
+          {joinedHubs.map(hub => (
+            <button
+              key={hub.hubId}
+              onClick={() => onSelectHub?.(hub.categoryId, hub.hubId)}
+              className="flex flex-col items-center gap-1 w-full py-2 px-2 rounded-xl transition-all hover:opacity-80"
+              style={{ color: "var(--text-dim)" }}
+            >
+              <span className="w-8 h-8 rounded-lg flex items-center justify-center text-base"
+                style={{ background: `${hub.color}25`, border: `1px solid ${hub.color}40` }}>
+                {hub.emoji}
+              </span>
+              <span className="text-[9px] font-medium leading-tight text-center" style={{ color: "var(--text-dim)" }}>{hub.name}</span>
+            </button>
+          ))}
+        </div>
 
       </nav>
 

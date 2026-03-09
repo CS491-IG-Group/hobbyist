@@ -25,9 +25,10 @@ function ArrowRightIcon() {
 /* ------------------------------------------------------------------ */
 /*  Item card (right side-bar)                                         */
 /* ------------------------------------------------------------------ */
-function ItemCard({ item }: { item: HubItem }) {
+function ItemCard({ item, onClick }: { item: HubItem; onClick?: () => void }) {
     return (
         <div
+            onClick={onClick}
             className="rounded-xl p-4 flex items-center justify-between transition-all duration-200 hover:scale-[1.01] cursor-pointer"
             style={{
                 background: "var(--surface2)",
@@ -72,9 +73,10 @@ interface HubPageProps {
     categoryId: string;
     hubId: string;
     onBack: () => void;
+    onSelectItem?: (itemIndex: number) => void;
 }
 
-export default function HubPage({ categoryId, hubId, onBack }: HubPageProps) {
+export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: HubPageProps) {
     const [activeTab, setActiveTab] = useState<"recent" | "popular">("recent");
 
     const category = getCategoryById(categoryId);
@@ -209,7 +211,7 @@ export default function HubPage({ categoryId, hubId, onBack }: HubPageProps) {
                     </h2>
                     <div className="space-y-3">
                         {hub.items.map((item, i) => (
-                            <ItemCard key={i} item={item} />
+                            <ItemCard key={i} item={item} onClick={() => onSelectItem?.(i)} />
                         ))}
                     </div>
                 </div>
