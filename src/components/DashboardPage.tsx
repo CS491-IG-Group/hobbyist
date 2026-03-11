@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Sidebar from "./Sidebar";
 import DiscoverPage from "./DiscoverPage";
 import CategoryPage from "./CategoryPage";
@@ -9,6 +9,7 @@ import TimelinePage from "./TimelinePage";
 import NicheFeed from "./NicheFeed";
 import ProfilePage from "./ProfilePage";
 import NotificationsPage from "./NotificationsPage";
+import { supabase } from "../lib/supabase";
 
 type SubPage =
   | null
@@ -67,12 +68,30 @@ export default function DashboardPage({ onLogout }: Props) {
   const [activeNav, setActiveNav] = useState("timeline");
   const [subPage, setSubPage] = useState<SubPage>(null);
   const [unreadCount, setUnreadCount] = useState(3);
+  const [onboardingCompleted, setOnboardingCompleted] = useState(false);
 
   /** Wrap setActiveNav so we reset subPage when switching sections */
   function handleNav(id: string) {
     setActiveNav(id);
     setSubPage(null);
   }
+
+  // if onboarding is not complete => edit profile
+  useEffect(() => {
+    const checkOnboarding = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        console.log("data:", user)
+        const { data } = await supabase
+          .from("users")
+          .select("onboarding_completed")
+          .eq("id", user.id)
+          .single();
+        setOnboardingCompleted(data?.onboarding_completed || false);
+      }
+    };
+    checkOnboarding();
+  }, []);
 
   const [goals, setGoals] = useState([
     { id: 1, label: "Run 5km three times a week", current: 2, total: 3 },

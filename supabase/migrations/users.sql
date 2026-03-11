@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS public.users (
     email VARCHAR(255),                  /* optional; may duplicate auth.users.email for display */
     display_name VARCHAR(100),           /* friendly name shown in the UI */
     onboarding_completed BOOLEAN NOT NULL DEFAULT false, /* false until user finishes onboarding wizard */
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPT NOT NULL DEFAULT now()
+    bio VARCHAR(300);
 );
 
 /* Trigger: create a users row when someone signs up via Supabase Auth */
@@ -23,8 +24,9 @@ BEGIN
         NEW.email,
         NEW.created_at,                              /* use auth.users.created_at directly */
         NEW.raw_user_meta_data->>'display_name'      /* fixed: was NEW.display_name which doesn't exist */
+        NEW.onboarding_completed
+        NEW.bio
     )
-    ON CONFLICT (handle) DO UPDATE SET handle = NULL; /* if handle is taken, null it out rather than orphaning the user */
     RETURN NEW;
 END;
 $$;
