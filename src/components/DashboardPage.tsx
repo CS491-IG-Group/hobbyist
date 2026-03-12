@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import Sidebar from "./Sidebar";
 import DiscoverPage from "./DiscoverPage";
 import CategoryPage from "./CategoryPage";
@@ -21,19 +21,40 @@ interface Props {
   onLogout: () => void;
 }
 
-function GoalCard({ label, current, total, onIncrement, onDecrement, onDelete }: {
-  label: string;
-  current: number;
-  total: number;
-  onIncrement: () => void;
-  onDecrement: () => void;
-  onDelete: () => void;
+// ─── Goal Card ────────────────────────────────────────────────────────────────
+function GoalCard({ label, current, total, onIncrement, onDecrement, onDelete, onRename }: {
+  label: string; current: number; total: number;
+  onIncrement: () => void; onDecrement: () => void;
+  onDelete: () => void; onRename: (newLabel: string) => void;
 }) {
   const pct = Math.round((current / total) * 100);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(label);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
+
+  const commit = () => {
+    if (draft.trim()) onRename(draft.trim());
+    else setDraft(label);
+    setEditing(false);
+  };
+
   return (
     <div className="rounded-xl p-3" style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}>
       <div className="flex items-start justify-between gap-2 mb-2">
-        <span className="text-xs font-medium leading-snug" style={{ color: "var(--text)" }}>{label}</span>
+        {editing ? (
+          <input ref={inputRef} value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(label); setEditing(false); } }}
+            className="flex-1 text-xs font-medium bg-transparent outline-none border-b"
+            style={{ color: "var(--text)", borderColor: "#a78bfa" }} />
+        ) : (
+          <span className="flex-1 text-xs font-medium leading-snug cursor-pointer hover:opacity-70"
+            style={{ color: "var(--text)" }} onClick={() => setEditing(true)} title="Click to rename">
+            {label}
+          </span>
+        )}
         <button onClick={onDelete} className="shrink-0 hover:opacity-80" style={{ color: "var(--text-muted)" }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -43,18 +64,13 @@ function GoalCard({ label, current, total, onIncrement, onDecrement, onDelete }:
       <div className="flex items-center gap-2 mb-2">
         <button onClick={onDecrement}
           className="w-6 h-6 rounded-lg flex items-center justify-center text-sm font-bold transition-all hover:opacity-80"
-          style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>
-          −
-        </button>
+          style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>−</button>
         <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--surface)" }}>
-          <div className="h-full rounded-full transition-all"
-            style={{ width: `${pct}%`, background: "var(--gradient-btn)" }} />
+          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: "var(--gradient-btn)" }} />
         </div>
         <button onClick={onIncrement}
           className="w-6 h-6 rounded-lg flex items-center justify-center text-sm font-bold transition-all hover:opacity-80"
-          style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "#a78bfa" }}>
-          +
-        </button>
+          style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "#a78bfa" }}>+</button>
       </div>
       <div className="flex justify-between">
         <span className="text-xs" style={{ color: "var(--text-muted)" }}>{current} / {total}</span>
@@ -64,24 +80,102 @@ function GoalCard({ label, current, total, onIncrement, onDecrement, onDelete }:
   );
 }
 
+// ─── New Goal Form ─────────────────────────────────────────────────────────────
+function NewGoalForm({ onAdd, onCancel }: {
+  onAdd: (label: string, current: number, total: number) => void;
+  onCancel: () => void;
+}) {
+  const [label, setLabel] = useState("");
+  const [current, setCurrent] = useState("0");
+  const [total, setTotal] = useState("10");
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const handleAdd = () => {
+    if (!label.trim()) return;
+    const c = Math.max(0, parseInt(current) || 0);
+    const t = Math.max(1, parseInt(total) || 1);
+    onAdd(label.trim(), Math.min(c, t), t);
+  };
+
+  return (
+    <div className="rounded-xl p-3 space-y-2" style={{ background: "var(--surface2)", border: "1px solid #a78bfa40" }}>
+      <input ref={inputRef} value={label} onChange={e => setLabel(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter") handleAdd(); if (e.key === "Escape") onCancel(); }}
+        placeholder="Goal name..."
+        className="w-full text-xs bg-transparent outline-none border-b pb-1"
+        style={{ color: "var(--text)", borderColor: "var(--border)" }} />
+      <div className="flex gap-2">
+        <div className="flex-1">
+          <p className="text-[10px] mb-1" style={{ color: "var(--text-muted)" }}>Current</p>
+          <input type="number" min="0" value={current} onChange={e => setCurrent(e.target.value)}
+            className="w-full text-xs bg-transparent outline-none border rounded-lg px-2 py-1 text-center"
+            style={{ color: "var(--text)", borderColor: "var(--border)" }} />
+        </div>
+        <div className="flex-1">
+          <p className="text-[10px] mb-1" style={{ color: "var(--text-muted)" }}>Target</p>
+          <input type="number" min="1" value={total} onChange={e => setTotal(e.target.value)}
+            className="w-full text-xs bg-transparent outline-none border rounded-lg px-2 py-1 text-center"
+            style={{ color: "var(--text)", borderColor: "var(--border)" }} />
+        </div>
+      </div>
+      <div className="flex gap-2 pt-1">
+        <button onClick={onCancel}
+          className="flex-1 py-1.5 rounded-lg text-xs font-semibold hover:opacity-80"
+          style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>Cancel</button>
+        <button onClick={handleAdd} disabled={!label.trim()}
+          className="flex-1 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-90 disabled:opacity-40"
+          style={{ background: "var(--gradient-btn)" }}>Add</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── New List Form ─────────────────────────────────────────────────────────────
+function NewListForm({ onAdd, onCancel }: {
+  onAdd: (label: string) => void;
+  onCancel: () => void;
+}) {
+  const [label, setLabel] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  return (
+    <div className="rounded-xl p-3 space-y-2" style={{ background: "var(--surface2)", border: "1px solid #a78bfa40" }}>
+      <input ref={inputRef} value={label} onChange={e => setLabel(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter" && label.trim()) onAdd(label.trim()); if (e.key === "Escape") onCancel(); }}
+        placeholder="List name..."
+        className="w-full text-xs bg-transparent outline-none border-b pb-1"
+        style={{ color: "var(--text)", borderColor: "var(--border)" }} />
+      <div className="flex gap-2 pt-1">
+        <button onClick={onCancel}
+          className="flex-1 py-1.5 rounded-lg text-xs font-semibold hover:opacity-80"
+          style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-muted)" }}>Cancel</button>
+        <button onClick={() => label.trim() && onAdd(label.trim())} disabled={!label.trim()}
+          className="flex-1 py-1.5 rounded-lg text-xs font-semibold text-white hover:opacity-90 disabled:opacity-40"
+          style={{ background: "var(--gradient-btn)" }}>Add</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
 export default function DashboardPage({ onLogout }: Props) {
   const [activeNav, setActiveNav] = useState("timeline");
   const [subPage, setSubPage] = useState<SubPage>(null);
   const [unreadCount, setUnreadCount] = useState(3);
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
 
-  /** Wrap setActiveNav so we reset subPage when switching sections */
   function handleNav(id: string) {
     setActiveNav(id);
     setSubPage(null);
   }
 
-  // if onboarding is not complete => edit profile
   useEffect(() => {
     const checkOnboarding = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        console.log("data:", user)
+        console.log("data:", user);
         const { data } = await supabase
           .from("users")
           .select("onboarding_completed")
@@ -93,17 +187,55 @@ export default function DashboardPage({ onLogout }: Props) {
     checkOnboarding();
   }, []);
 
+  // Joined hubs — shared with TimelinePage
+  const [joinedHubs, setJoinedHubs] = useState([
+    "Cars", "Fitness", "Technology", "Movies", "Photography", "Cooking", "Gaming"
+  ]);
+  const toggleJoinHub = (hubName: string) =>
+    setJoinedHubs(prev => prev.includes(hubName) ? prev.filter(h => h !== hubName) : [...prev, hubName]);
+
+  // Goals
   const [goals, setGoals] = useState([
     { id: 1, label: "Run 5km three times a week", current: 2, total: 3 },
     { id: 2, label: "Read 12 books this year", current: 4, total: 12 },
     { id: 3, label: "Cook a new recipe every week", current: 6, total: 8 },
   ]);
+  const [showNewGoal, setShowNewGoal] = useState(false);
 
+  const incrementGoal = (id: number) =>
+    setGoals(prev => prev.map(g => g.id === id && g.current < g.total ? { ...g, current: g.current + 1 } : g));
+  const decrementGoal = (id: number) =>
+    setGoals(prev => prev.map(g => g.id === id && g.current > 0 ? { ...g, current: g.current - 1 } : g));
+  const deleteGoal = (id: number) =>
+    setGoals(prev => prev.filter(g => g.id !== id));
+  const renameGoal = (id: number, newLabel: string) =>
+    setGoals(prev => prev.map(g => g.id === id ? { ...g, label: newLabel } : g));
+  const addGoal = (label: string, current: number, total: number) => {
+    setGoals(prev => [...prev, { id: Date.now(), label, current, total }]);
+    setShowNewGoal(false);
+  };
+
+  // Lists
   const [lists, setLists] = useState([
     { id: 1, label: "🎬 Movies to Watch", count: 8 },
     { id: 2, label: "📚 Books to Read", count: 5 },
     { id: 3, label: "🎮 Games to Play", count: 12 },
   ]);
+  const [showNewList, setShowNewList] = useState(false);
+  const [editingListId, setEditingListId] = useState<number | null>(null);
+  const [listDraft, setListDraft] = useState("");
+  const listInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (editingListId !== null) listInputRef.current?.focus(); }, [editingListId]);
+
+  const addList = (label: string) => {
+    setLists(prev => [...prev, { id: Date.now(), label, count: 0 }]);
+    setShowNewList(false);
+  };
+  const commitListRename = (id: number) => {
+    if (listDraft.trim()) setLists(prev => prev.map(l => l.id === id ? { ...l, label: listDraft.trim() } : l));
+    setEditingListId(null);
+  };
+  const deleteList = (id: number) => setLists(prev => prev.filter(l => l.id !== id));
 
   const hubs = [
     { id: 1, name: "Cars", emoji: "🚗", color: "#3b82f6" },
@@ -114,15 +246,6 @@ export default function DashboardPage({ onLogout }: Props) {
     { id: 6, name: "Cooking", emoji: "🍳", color: "#ef4444" },
     { id: 7, name: "Gaming", emoji: "🎮", color: "#8b5cf6" },
   ];
-
-  const incrementGoal = (id: number) =>
-    setGoals(prev => prev.map(g => g.id === id && g.current < g.total ? { ...g, current: g.current + 1 } : g));
-
-  const decrementGoal = (id: number) =>
-    setGoals(prev => prev.map(g => g.id === id && g.current > 0 ? { ...g, current: g.current - 1 } : g));
-
-  const deleteGoal = (id: number) =>
-    setGoals(prev => prev.filter(g => g.id !== id));
 
   return (
     <div className="flex min-h-screen" style={{ background: "var(--bg)" }}>
@@ -139,7 +262,7 @@ export default function DashboardPage({ onLogout }: Props) {
 
       <main className="flex-1 overflow-y-auto">
         {activeNav === "timeline" ? (
-          <TimelinePage />
+          <TimelinePage joinedHubs={joinedHubs} onToggleJoin={toggleJoinHub} />
         ) : activeNav === "discover" ? (
           subPage?.type === "item" ? (
             <ItemDetailPage
@@ -167,9 +290,7 @@ export default function DashboardPage({ onLogout }: Props) {
             />
           ) : (
             <DiscoverPage
-              onSelectCategory={(categoryId) =>
-                setSubPage({ type: "category", categoryId })
-              }
+              onSelectCategory={(categoryId) => setSubPage({ type: "category", categoryId })}
             />
           )
         ) : activeNav === "orbit" ? (
@@ -184,28 +305,26 @@ export default function DashboardPage({ onLogout }: Props) {
       <aside className="hidden lg:flex flex-col w-72 shrink-0 sticky top-0 h-screen overflow-y-auto p-4 gap-5"
         style={{ borderLeft: "1px solid var(--border)" }}>
 
-        {/* Goals */}
+        {/* ── Goals ── */}
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-bold" style={{ fontFamily: "Syne, sans-serif" }}>Goals</h3>
-            <button
-              onClick={() => setGoals(prev => [...prev, { id: Date.now(), label: "New goal", current: 0, total: 5 }])}
-              className="w-7 h-7 rounded-full flex items-center justify-center text-white text-base hover:opacity-80 transition-all"
-              style={{ background: "var(--gradient-btn)" }}>+</button>
+            {!showNewGoal && (
+              <button onClick={() => setShowNewGoal(true)}
+                className="w-7 h-7 rounded-full flex items-center justify-center text-white text-base hover:opacity-80 transition-all"
+                style={{ background: "var(--gradient-btn)" }}>+</button>
+            )}
           </div>
           <div className="space-y-2">
+            {showNewGoal && <NewGoalForm onAdd={addGoal} onCancel={() => setShowNewGoal(false)} />}
             {goals.map(g => (
-              <GoalCard
-                key={g.id}
-                label={g.label}
-                current={g.current}
-                total={g.total}
+              <GoalCard key={g.id} label={g.label} current={g.current} total={g.total}
                 onIncrement={() => incrementGoal(g.id)}
                 onDecrement={() => decrementGoal(g.id)}
                 onDelete={() => deleteGoal(g.id)}
-              />
+                onRename={(newLabel) => renameGoal(g.id, newLabel)} />
             ))}
-            {goals.length === 0 && (
+            {goals.length === 0 && !showNewGoal && (
               <p className="text-xs text-center py-4" style={{ color: "var(--text-muted)" }}>
                 No goals yet. Hit + to add one!
               </p>
@@ -213,53 +332,76 @@ export default function DashboardPage({ onLogout }: Props) {
           </div>
         </div>
 
-        {/* Divider */}
         <div className="h-px" style={{ background: "var(--border)" }} />
 
-        {/* Lists */}
+        {/* ── Lists ── */}
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-bold" style={{ fontFamily: "Syne, sans-serif" }}>Lists</h3>
-            <button
-              onClick={() => setLists(prev => [...prev, { id: Date.now(), label: "New list", count: 0 }])}
-              className="w-7 h-7 rounded-full flex items-center justify-center text-white text-base hover:opacity-80 transition-all"
-              style={{ background: "var(--gradient-btn)" }}>+</button>
+            {!showNewList && (
+              <button onClick={() => setShowNewList(true)}
+                className="w-7 h-7 rounded-full flex items-center justify-center text-white text-base hover:opacity-80 transition-all"
+                style={{ background: "var(--gradient-btn)" }}>+</button>
+            )}
           </div>
           <div className="space-y-2">
+            {showNewList && <NewListForm onAdd={addList} onCancel={() => setShowNewList(false)} />}
             {lists.map(list => (
               <div key={list.id}
                 className="flex items-center justify-between w-full px-3 py-2.5 rounded-xl"
                 style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}>
-                <span className="text-sm font-medium">{list.label}</span>
-                <div className="flex items-center gap-2">
+                {editingListId === list.id ? (
+                  <input ref={listInputRef} value={listDraft}
+                    onChange={e => setListDraft(e.target.value)}
+                    onBlur={() => commitListRename(list.id)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") commitListRename(list.id);
+                      if (e.key === "Escape") setEditingListId(null);
+                    }}
+                    className="flex-1 text-xs font-medium bg-transparent outline-none border-b mr-2"
+                    style={{ color: "var(--text)", borderColor: "#a78bfa" }} />
+                ) : (
+                  <span className="flex-1 text-sm font-medium cursor-pointer hover:opacity-70 truncate"
+                    onClick={() => { setEditingListId(list.id); setListDraft(list.label); }}
+                    title="Click to rename">
+                    {list.label}
+                  </span>
+                )}
+                <div className="flex items-center gap-2 shrink-0">
                   <span className="text-xs px-2 py-0.5 rounded-full"
                     style={{ background: "rgba(139,92,246,0.15)", color: "#a78bfa" }}>
                     {list.count}
                   </span>
-                  <span style={{ color: "var(--text-muted)" }}>›</span>
+                  <button onClick={() => deleteList(list.id)} className="hover:opacity-80" style={{ color: "var(--text-muted)" }}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Divider */}
         <div className="h-px" style={{ background: "var(--border)" }} />
 
-        {/* Hubs */}
+        {/* ── My Hubs ── */}
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-bold" style={{ fontFamily: "Syne, sans-serif" }}>My Hubs</h3>
-          </div>
+          <h3 className="text-sm font-bold mb-3" style={{ fontFamily: "Syne, sans-serif" }}>My Hubs</h3>
           <div className="flex flex-wrap gap-2">
-            {hubs.map(hub => (
+            {hubs.filter(h => joinedHubs.includes(h.name)).map(hub => (
               <div key={hub.id}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium"
-                style={{ background: `${hub.color}15`, color: hub.color, border: `1px solid ${hub.color}30` }}>
+                onClick={() => toggleJoinHub(hub.name)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer hover:opacity-70 transition-all"
+                style={{ background: `${hub.color}15`, color: hub.color, border: `1px solid ${hub.color}30` }}
+                title="Click to leave hub">
                 <span>{hub.emoji}</span>
                 <span>{hub.name}</span>
               </div>
             ))}
+            {joinedHubs.length === 0 && (
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>No hubs joined yet.</p>
+            )}
           </div>
         </div>
 

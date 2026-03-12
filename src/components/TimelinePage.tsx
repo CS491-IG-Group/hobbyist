@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from "react";
+import HubPage from "./HubsProfile";
 
 const POSTS = [
     {
@@ -96,6 +97,8 @@ const POSTS = [
 
 const FILTERS = ["All", "Cars", "Fitness", "Technology", "Movies", "Photography", "Cooking"];
 
+const HUBS_LIST = ["Cars", "Fitness", "Technology", "Movies", "Photography", "Cooking", "Gaming"];
+
 function HeartIcon({ filled }: { filled: boolean }) {
     return (
         <svg width="18" height="18" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
@@ -161,7 +164,6 @@ function PostCard({ post }: { post: typeof POSTS[0] }) {
                         </div>
                     </div>
                 </div>
-
                 <button style={{ color: "var(--text-muted)" }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                         <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
@@ -177,12 +179,7 @@ function PostCard({ post }: { post: typeof POSTS[0] }) {
             {/* Image */}
             {post.image && (
                 <div className="rounded-xl overflow-hidden mb-4" style={{ maxHeight: "320px" }}>
-                    <img
-                        src={post.image}
-                        alt="post"
-                        className="w-full object-cover"
-                        style={{ maxHeight: "320px" }}
-                    />
+                    <img src={post.image} alt="post" className="w-full object-cover" style={{ maxHeight: "320px" }} />
                 </div>
             )}
 
@@ -191,20 +188,17 @@ function PostCard({ post }: { post: typeof POSTS[0] }) {
 
             {/* Actions */}
             <div className="flex items-center gap-5">
-                <button
-                    onClick={handleLike}
+                <button onClick={handleLike}
                     className="flex items-center gap-1.5 text-xs transition-all hover:scale-105"
                     style={{ color: liked ? "#ec4899" : "var(--text-muted)" }}>
                     <HeartIcon filled={liked} />
                     <span>{likeCount}</span>
                 </button>
-
                 <button className="flex items-center gap-1.5 text-xs transition-all hover:scale-105"
                     style={{ color: "var(--text-muted)" }}>
                     <CommentIcon />
                     <span>{post.comments}</span>
                 </button>
-
                 <button className="flex items-center gap-1.5 text-xs transition-all hover:scale-105"
                     style={{ color: "var(--text-muted)" }}>
                     <RepostIcon />
@@ -214,8 +208,6 @@ function PostCard({ post }: { post: typeof POSTS[0] }) {
         </div>
     );
 }
-
-const HUBS_LIST = ["Cars", "Fitness", "Technology", "Movies", "Photography", "Cooking", "Gaming"];
 
 function CreatePostModal({ onClose }: { onClose: () => void }) {
     const [text, setText] = React.useState("");
@@ -243,7 +235,6 @@ function CreatePostModal({ onClose }: { onClose: () => void }) {
 
                 {/* Body */}
                 <div className="p-5">
-                    {/* User row */}
                     <div className="flex items-center gap-3 mb-4">
                         <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0"
                             style={{ background: "linear-gradient(135deg, #1e1b4b, #4c1d95)" }}>
@@ -255,7 +246,6 @@ function CreatePostModal({ onClose }: { onClose: () => void }) {
                         </div>
                     </div>
 
-                    {/* Text area */}
                     <textarea
                         placeholder="What's on your mind? Share with your hubs..."
                         value={text}
@@ -265,14 +255,12 @@ function CreatePostModal({ onClose }: { onClose: () => void }) {
                         style={{ color: "var(--text)", caretColor: "#a78bfa" }}
                     />
 
-                    {/* Char count */}
                     <div className="flex justify-end mb-4">
                         <span className="text-xs" style={{ color: text.length > maxChars * 0.8 ? "#f59e0b" : "var(--text-muted)" }}>
                             {text.length}/{maxChars}
                         </span>
                     </div>
 
-                    {/* Hub selector */}
                     <div className="mb-5">
                         <p className="text-xs font-semibold mb-2" style={{ color: "var(--text-muted)" }}>Post to hub</p>
                         <div className="flex flex-wrap gap-2">
@@ -291,10 +279,8 @@ function CreatePostModal({ onClose }: { onClose: () => void }) {
                         </div>
                     </div>
 
-                    {/* Divider */}
                     <div className="h-px mb-4" style={{ background: "var(--border)" }} />
 
-                    {/* Actions */}
                     <div className="flex items-center justify-between">
                         <div className="flex gap-3">
                             <button style={{ color: "var(--text-muted)" }} title="Add image">
@@ -327,13 +313,30 @@ function CreatePostModal({ onClose }: { onClose: () => void }) {
     );
 }
 
-export default function TimelinePage() {
+interface TimelineProps {
+    joinedHubs: string[];
+    onToggleJoin: (hubName: string) => void;
+}
+
+export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelineProps) {
     const [activeFilter, setActiveFilter] = useState("All");
     const [showCompose, setShowCompose] = useState(false);
+    const [activeHub, setActiveHub] = useState<string | null>(null);
 
     const filtered = activeFilter === "All"
         ? POSTS
         : POSTS.filter(p => p.hub === activeFilter);
+
+    if (activeHub) {
+        return (
+            <HubPage
+                hubName={activeHub}
+                joined={joinedHubs.includes(activeHub)}
+                onToggleJoin={() => onToggleJoin(activeHub)}
+                onBack={() => setActiveHub(null)}
+            />
+        );
+    }
 
     return (
         <div className="flex flex-1 min-h-screen" style={{ background: "var(--bg)" }}>
@@ -342,15 +345,12 @@ export default function TimelinePage() {
             <div className="flex-1 overflow-y-auto">
                 <div className="px-6 py-6">
 
-                    {/* Header */}
                     <h1 className="text-xl font-bold mb-5" style={{ fontFamily: "Syne, sans-serif" }}>Timeline</h1>
 
                     {/* Filter pills */}
                     <div className="flex gap-2 overflow-x-auto pb-3 mb-5 scrollbar-hide">
                         {FILTERS.map(f => (
-                            <button
-                                key={f}
-                                onClick={() => setActiveFilter(f)}
+                            <button key={f} onClick={() => setActiveFilter(f)}
                                 className="px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all"
                                 style={{
                                     background: activeFilter === f ? "var(--gradient-btn)" : "var(--surface2)",
@@ -370,7 +370,7 @@ export default function TimelinePage() {
                     </div>
                 </div>
 
-                {/* Floating compose button — fixed, sits at bottom of feed between trending sidebar (w-64) and goals sidebar (w-72) */}
+                {/* Floating compose button */}
                 <button
                     onClick={() => setShowCompose(true)}
                     className="fixed bottom-8 z-40 w-14 h-14 rounded-full flex items-center justify-center text-white transition-all hover:scale-110 active:scale-95"
@@ -402,21 +402,33 @@ export default function TimelinePage() {
                         { name: "Technology", members: "31.1k", color: "#f59e0b", emoji: "💻" },
                         { name: "Movies", members: "15.8k", color: "#ec4899", emoji: "🎬" },
                         { name: "Photography", members: "9.3k", color: "#6366f1", emoji: "📸" },
-                    ].map(hub => (
-                        <button key={hub.name}
-                            className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl transition-all hover:opacity-80"
-                            style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}>
-                            <span className="text-base">{hub.emoji}</span>
-                            <div className="flex-1 text-left">
-                                <p className="text-xs font-semibold">{hub.name}</p>
-                                <p className="text-xs" style={{ color: "var(--text-muted)" }}>{hub.members} members</p>
+                    ].map(hub => {
+                        const isJoined = joinedHubs.includes(hub.name);
+                        return (
+                            <div key={hub.name} className="flex items-center gap-2">
+                                {/* Hub name — opens hub page */}
+                                <button
+                                    onClick={() => setActiveHub(hub.name)}
+                                    className="flex items-center gap-3 flex-1 px-3 py-2.5 rounded-xl transition-all hover:opacity-80"
+                                    style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}>
+                                    <span className="text-base">{hub.emoji}</span>
+                                    <div className="flex-1 text-left">
+                                        <p className="text-xs font-semibold">{hub.name}</p>
+                                        <p className="text-xs" style={{ color: "var(--text-muted)" }}>{hub.members} members</p>
+                                    </div>
+                                </button>
+                                {/* Join / Leave toggle */}
+                                <button
+                                    onClick={() => onToggleJoin(hub.name)}
+                                    className="text-xs px-2.5 py-1.5 rounded-lg font-semibold shrink-0 transition-all hover:opacity-80"
+                                    style={isJoined
+                                        ? { background: `${hub.color}20`, color: hub.color, border: `1px solid ${hub.color}40` }
+                                        : { background: "var(--surface2)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
+                                    {isJoined ? "✓" : "+"}
+                                </button>
                             </div>
-                            <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                                style={{ background: `${hub.color}20`, color: hub.color }}>
-                                Join
-                            </span>
-                        </button>
-                    ))}
+                        );
+                    })}
                 </div>
 
                 {/* Suggested friends */}
