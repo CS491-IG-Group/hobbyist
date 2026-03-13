@@ -1,5 +1,6 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { logContentEvent } from "@/lib/analytics";
 
 const POSTS = [
     {
@@ -123,13 +124,27 @@ function RepostIcon() {
     );
 }
 
-function PostCard({ post }: { post: typeof POSTS[0] }) {
+interface PostCardProps {
+    post: typeof POSTS[0];
+    userId: string | null;
+    sessionId: string;
+}
+
+function PostCard({ post, userId, sessionId }: PostCardProps) {
     const [liked, setLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(post.likes);
 
-    const handleLike = () => {
+    const handleLike = async () => {
         setLiked(!liked);
         setLikeCount(liked ? likeCount - 1 : likeCount + 1);
+
+        await logContentEvent({
+            userId,
+            sessionId,
+            eventType: "like",
+            postId: post.id,
+            uiLocation: "timeline",
+        });
     };
 
     return (
@@ -327,13 +342,27 @@ function CreatePostModal({ onClose }: { onClose: () => void }) {
     );
 }
 
-export default function TimelinePage() {
+interface TimelinePageProps {
+    userId: string | null;
+    sessionId: string;
+}
+
+export default function TimelinePage({ userId, sessionId }: TimelinePageProps) {
     const [activeFilter, setActiveFilter] = useState("All");
     const [showCompose, setShowCompose] = useState(false);
 
     const filtered = activeFilter === "All"
         ? POSTS
         : POSTS.filter(p => p.hub === activeFilter);
+
+    useEffect(() => {
+        logContentEvent({
+            userId,
+            sessionId,
+            eventType: "view",
+            uiLocation: "timeline",
+        });
+    }, [userId, sessionId]);
 
     return (
         <div className="flex flex-1 min-h-screen" style={{ background: "var(--bg)" }}>
@@ -365,7 +394,7 @@ export default function TimelinePage() {
                     {/* Posts */}
                     <div className="space-y-3">
                         {filtered.map(post => (
-                            <PostCard key={post.id} post={post} />
+                            <PostCard key={post.id} post={post} userId={userId} sessionId={sessionId} />
                         ))}
                     </div>
                 </div>

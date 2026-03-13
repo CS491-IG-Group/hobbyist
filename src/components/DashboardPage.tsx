@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Sidebar from "./Sidebar";
 import DiscoverPage from "./DiscoverPage";
 import CategoryPage from "./CategoryPage";
@@ -9,6 +9,7 @@ import TimelinePage from "./TimelinePage";
 import NicheFeed from "./NicheFeed";
 import ProfilePage from "./ProfilePage";
 import NotificationsPage from "./NotificationsPage";
+import { supabase } from "@/lib/supabase";
 
 type SubPage =
   | null
@@ -67,6 +68,24 @@ export default function DashboardPage({ onLogout }: Props) {
   const [activeNav, setActiveNav] = useState("timeline");
   const [subPage, setSubPage] = useState<SubPage>(null);
   const [unreadCount, setUnreadCount] = useState(3);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [sessionId] = useState<string>(() =>
+    typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    supabase.auth.getUser().then(({ data }) => {
+      if (!cancelled) {
+        setUserId(data.user?.id ?? null);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /** Wrap setActiveNav so we reset subPage when switching sections */
   function handleNav(id: string) {
@@ -120,7 +139,7 @@ export default function DashboardPage({ onLogout }: Props) {
 
       <main className="flex-1 overflow-y-auto">
         {activeNav === "timeline" ? (
-          <TimelinePage />
+          <TimelinePage userId={userId} sessionId={sessionId} />
         ) : activeNav === "discover" ? (
           subPage?.type === "item" ? (
             <ItemDetailPage
