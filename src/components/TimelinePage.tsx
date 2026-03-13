@@ -1,6 +1,7 @@
 "use client";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import HubPage from "./HubsProfile";
+import { logContentEvent } from "../lib/analytics";
 
 const POSTS = [
     {
@@ -126,13 +127,27 @@ function RepostIcon() {
     );
 }
 
-function PostCard({ post }: { post: typeof POSTS[0] }) {
+interface PostCardProps {
+    post: typeof POSTS[0];
+    userId: string | null;
+    sessionId: string;
+}
+
+function PostCard({ post, userId, sessionId }: PostCardProps) {
     const [liked, setLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(post.likes);
 
-    const handleLike = () => {
+    const handleLike = async () => {
         setLiked(!liked);
         setLikeCount(liked ? likeCount - 1 : likeCount + 1);
+
+        await logContentEvent({
+            userId,
+            sessionId,
+            eventType: "like",
+            uiLocation: "timeline",
+            postId: post.id,
+        });
     };
 
     return (
@@ -316,9 +331,11 @@ function CreatePostModal({ onClose }: { onClose: () => void }) {
 interface TimelineProps {
     joinedHubs: string[];
     onToggleJoin: (hubName: string) => void;
+    userId: string | null;
+    sessionId: string;
 }
 
-export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelineProps) {
+export default function TimelinePage({ joinedHubs, onToggleJoin, userId, sessionId }: TimelineProps) {
     const [activeFilter, setActiveFilter] = useState("All");
     const [showCompose, setShowCompose] = useState(false);
     const [activeHub, setActiveHub] = useState<string | null>(null);
@@ -326,6 +343,15 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelineProps
     const filtered = activeFilter === "All"
         ? POSTS
         : POSTS.filter(p => p.hub === activeFilter);
+
+    useEffect(() => {
+        logContentEvent({
+            userId,
+            sessionId,
+            eventType: "view",
+            uiLocation: "timeline",
+        });
+    }, [userId, sessionId]);
 
     if (activeHub) {
         return (
@@ -365,7 +391,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelineProps
                     {/* Posts */}
                     <div className="space-y-3">
                         {filtered.map(post => (
-                            <PostCard key={post.id} post={post} />
+                            <PostCard key={post.id} post={post} userId={userId} sessionId={sessionId} />
                         ))}
                     </div>
                 </div>

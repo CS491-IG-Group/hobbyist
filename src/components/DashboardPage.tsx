@@ -165,6 +165,12 @@ export default function DashboardPage({ onLogout }: Props) {
   const [subPage, setSubPage] = useState<SubPage>(null);
   const [unreadCount, setUnreadCount] = useState(3);
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [sessionId] = useState<string>(() =>
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random()}`
+  );
 
   function handleNav(id: string) {
     setActiveNav(id);
@@ -172,19 +178,29 @@ export default function DashboardPage({ onLogout }: Props) {
   }
 
   useEffect(() => {
-    const checkOnboarding = async () => {
+    let cancelled = false;
+
+    const checkOnboardingAndUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
+      if (cancelled) return;
       if (user) {
-        console.log("data:", user);
+        setUserId(user.id);
         const { data } = await supabase
           .from("users")
           .select("onboarding_completed")
           .eq("id", user.id)
           .single();
         setOnboardingCompleted(data?.onboarding_completed || false);
+      } else {
+        setUserId(null);
       }
     };
-    checkOnboarding();
+
+    checkOnboardingAndUser();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Joined hubs — shared with TimelinePage
@@ -262,7 +278,12 @@ export default function DashboardPage({ onLogout }: Props) {
 
       <main className="flex-1 overflow-y-auto">
         {activeNav === "timeline" ? (
-          <TimelinePage joinedHubs={joinedHubs} onToggleJoin={toggleJoinHub} />
+          <TimelinePage
+            joinedHubs={joinedHubs}
+            onToggleJoin={toggleJoinHub}
+            userId={userId}
+            sessionId={sessionId}
+          />
         ) : activeNav === "discover" ? (
           subPage?.type === "item" ? (
             <ItemDetailPage
