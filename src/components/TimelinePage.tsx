@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
 import HubPage from "./HubsProfile";
 import { logContentEvent } from "../lib/analytics";
 
@@ -145,8 +145,8 @@ function PostCard({ post, userId, sessionId }: PostCardProps) {
             userId,
             sessionId,
             eventType: "like",
-            uiLocation: "timeline",
             postId: post.id,
+            uiLocation: "timeline",
         });
     };
 
@@ -328,14 +328,14 @@ function CreatePostModal({ onClose }: { onClose: () => void }) {
     );
 }
 
-interface TimelineProps {
+interface TimelinePageProps {
     joinedHubs: string[];
     onToggleJoin: (hubName: string) => void;
     userId: string | null;
     sessionId: string;
 }
 
-export default function TimelinePage({ joinedHubs, onToggleJoin, userId, sessionId }: TimelineProps) {
+export default function TimelinePage({ joinedHubs, onToggleJoin, userId, sessionId }: TimelinePageProps) {
     const [activeFilter, setActiveFilter] = useState("All");
     const [showCompose, setShowCompose] = useState(false);
     const [activeHub, setActiveHub] = useState<string | null>(null);
@@ -363,7 +363,6 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
             />
         );
     }
-
     return (
         <div className="flex flex-1 min-h-screen" style={{ background: "var(--bg)" }}>
 

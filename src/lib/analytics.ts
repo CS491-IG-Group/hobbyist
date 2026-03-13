@@ -1,42 +1,42 @@
+"use client";
+
 import { supabase } from "./supabase";
 
-export type ContentEvent = {
+export type ContentEventType = "view" | "click" | "like" | "save" | "hide" | "report";
+
+interface LogContentEventParams {
   userId: string | null;
   sessionId: string;
-  eventType: string;
-  uiLocation: string;
+  eventType: ContentEventType;
   postId?: number;
   itemId?: number;
   hobbyId?: number;
   dwellMs?: number;
-  deviceType?: string | null;
-};
+  uiLocation?: string;
+  deviceType?: string;
+}
 
-export async function logContentEvent(event: ContentEvent) {
-  const {
-    userId,
-    sessionId,
-    eventType,
-    uiLocation,
-    postId,
-    itemId,
-    hobbyId,
-    dwellMs,
-    deviceType,
-  } = event;
+export async function logContentEvent(params: LogContentEventParams) {
+  const { userId, sessionId, eventType, postId, itemId, hobbyId, dwellMs, uiLocation, deviceType } = params;
 
-  if (!userId || !sessionId) return;
+  if (!userId) {
+    return;
+  }
 
-  await supabase.from("content_events").insert({
-    user_id: userId,
-    session_id: sessionId,
-    event_type: eventType,
-    ui_location: uiLocation,
-    post_id: postId ?? null,
-    item_id: itemId ?? null,
-    hobby_id: hobbyId ?? null,
-    dwell_ms: dwellMs ?? null,
-    device_type: deviceType ?? null,
-  });
+  try {
+    await supabase.from("content_events").insert({
+      user_id: userId,
+      post_id: postId ?? null,
+      item_id: itemId ?? null,
+      hobby_id: hobbyId ?? null,
+      event_type: eventType,
+      dwell_ms: dwellMs ?? null,
+      ui_location: uiLocation ?? null,
+      device_type: deviceType ?? (typeof window !== "undefined" ? "web" : null),
+      session_id: sessionId,
+    });
+  } catch {
+    // Swallow client-side analytics errors; they shouldn't break UX.
+  }
 }
 
