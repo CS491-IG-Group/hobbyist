@@ -224,7 +224,7 @@ function PostCard({ post, userId, sessionId }: PostCardProps) {
     );
 }
 
-function CreatePostModal({ onClose }: { onClose: () => void }) {
+function CreatePostModal({ onClose, onPost }: { onClose: () => void; onPost: (text: string, hub: string) => void }) {
     const [text, setText] = React.useState("");
     const [selectedHub, setSelectedHub] = React.useState("");
     const maxChars = 280;
@@ -315,7 +315,7 @@ function CreatePostModal({ onClose }: { onClose: () => void }) {
                             </button>
                         </div>
                         <button
-                            onClick={onClose}
+                            onClick={() => { if (text.trim() && selectedHub) { onPost(text.trim(), selectedHub); onClose(); } }}
                             disabled={!text.trim() || !selectedHub}
                             className="px-5 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{ background: "var(--gradient-btn)" }}>
@@ -335,14 +335,39 @@ interface TimelinePageProps {
     sessionId: string;
 }
 
+const HUB_COLORS: Record<string, string> = {
+    Cars: "#3b82f6", Fitness: "#10b981", Technology: "#f59e0b",
+    Movies: "#ec4899", Photography: "#6366f1", Cooking: "#ef4444", Gaming: "#8b5cf6",
+};
+
 export default function TimelinePage({ joinedHubs, onToggleJoin, userId, sessionId }: TimelinePageProps) {
     const [activeFilter, setActiveFilter] = useState("All");
     const [showCompose, setShowCompose] = useState(false);
     const [activeHub, setActiveHub] = useState<string | null>(null);
+    const [posts, setPosts] = useState(POSTS);
+
+    const handleNewPost = (text: string, hub: string) => {
+        const newPost = {
+            id: Date.now(),
+            user: "You",
+            handle: "@you",
+            avatar: "✨",
+            avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
+            hub,
+            hubColor: HUB_COLORS[hub] || "#8b5cf6",
+            time: "Just now",
+            text,
+            image: null,
+            likes: 0,
+            comments: 0,
+            reposts: 0,
+        };
+        setPosts(prev => [newPost, ...prev]);
+    };
 
     const filtered = activeFilter === "All"
-        ? POSTS
-        : POSTS.filter(p => p.hub === activeFilter);
+        ? posts
+        : posts.filter(p => p.hub === activeFilter);
 
     useEffect(() => {
         logContentEvent({
@@ -393,6 +418,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
                             <PostCard key={post.id} post={post} userId={userId} sessionId={sessionId} />
                         ))}
                     </div>
+
                 </div>
 
                 {/* Floating compose button */}
@@ -400,7 +426,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
                     onClick={() => setShowCompose(true)}
                     className="fixed bottom-8 z-40 w-14 h-14 rounded-full flex items-center justify-center text-white transition-all hover:scale-110 active:scale-95"
                     style={{
-                        right: "calc(256px + 48px)",
+                        right: "calc(320px + 2rem)",
                         background: "var(--gradient-btn)",
                         boxShadow: "0 4px 24px rgba(139,92,246,0.4)",
                     }}>
@@ -411,78 +437,134 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
                 </button>
             </div>
 
-            {/* Create post modal */}
-            {showCompose && <CreatePostModal onClose={() => setShowCompose(false)} />}
-
-            {/* Right sidebar */}
-            <aside className="hidden lg:block w-64 shrink-0 sticky top-0 h-screen overflow-y-auto p-4"
+            {/* Right sidebar — Trending Hubs & People You May Know */}
+            <aside className="hidden lg:block w-80 shrink-0 p-5"
                 style={{ borderLeft: "1px solid var(--border)" }}>
 
-                {/* Trending hubs */}
-                <h3 className="text-sm font-bold mb-3" style={{ fontFamily: "Syne, sans-serif" }}>Trending Hubs</h3>
-                <div className="space-y-2 mb-6">
-                    {[
-                        { name: "Cars", members: "18.2k", color: "#3b82f6", emoji: "🚗" },
-                        { name: "Fitness", members: "24.5k", color: "#10b981", emoji: "💪" },
-                        { name: "Technology", members: "31.1k", color: "#f59e0b", emoji: "💻" },
-                        { name: "Movies", members: "15.8k", color: "#ec4899", emoji: "🎬" },
-                        { name: "Photography", members: "9.3k", color: "#6366f1", emoji: "📸" },
-                    ].map(hub => {
-                        const isJoined = joinedHubs.includes(hub.name);
-                        return (
-                            <div key={hub.name} className="flex items-center gap-2">
-                                {/* Hub name — opens hub page */}
-                                <button
-                                    onClick={() => setActiveHub(hub.name)}
-                                    className="flex items-center gap-3 flex-1 px-3 py-2.5 rounded-xl transition-all hover:opacity-80"
-                                    style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}>
-                                    <span className="text-base">{hub.emoji}</span>
-                                    <div className="flex-1 text-left">
-                                        <p className="text-xs font-semibold">{hub.name}</p>
-                                        <p className="text-xs" style={{ color: "var(--text-muted)" }}>{hub.members} members</p>
+                {/* ── Trending Hubs ── */}
+                <div className="mb-6">
+                    <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-sm font-bold" style={{ fontFamily: "Syne, sans-serif" }}>
+                            🔥 Trending Hubs
+                        </h2>
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full"
+                            style={{ background: "rgba(139,92,246,0.12)", color: "#a78bfa" }}>
+                            Explore all
+                        </span>
+                    </div>
+                    <div className="space-y-2">
+                        {[
+                            { name: "Cars", members: "18.2k", color: "#3b82f6", emoji: "🚗", trend: "+12%", bg: "linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%)" },
+                            { name: "Fitness", members: "24.5k", color: "#10b981", emoji: "💪", trend: "+8%", bg: "linear-gradient(135deg, #064e3b 0%, #059669 100%)" },
+                            { name: "Technology", members: "31.1k", color: "#f59e0b", emoji: "💻", trend: "+21%", bg: "linear-gradient(135deg, #78350f 0%, #d97706 100%)" },
+                            { name: "Movies", members: "15.8k", color: "#ec4899", emoji: "🎬", trend: "+5%", bg: "linear-gradient(135deg, #831843 0%, #db2777 100%)" },
+                            { name: "Photography", members: "9.3k", color: "#6366f1", emoji: "📸", trend: "+17%", bg: "linear-gradient(135deg, #312e81 0%, #6366f1 100%)" },
+                            { name: "Cooking", members: "11.7k", color: "#ef4444", emoji: "🍳", trend: "+9%", bg: "linear-gradient(135deg, #7f1d1d 0%, #dc2626 100%)" },
+                        ].slice(0, 3).map(hub => {
+                            const isJoined = joinedHubs.includes(hub.name);
+                            return (
+                                <div key={hub.name}
+                                    className="rounded-xl p-3 transition-all hover:scale-[1.02] hover:-translate-y-0.5 h-14 flex items-center"
+                                    style={{
+                                        background: hub.bg,
+                                        border: "1px solid rgba(255,255,255,0.1)",
+                                        backdropFilter: "blur(12px)",
+                                        boxShadow: `0 4px 16px ${hub.color}20`,
+                                        cursor: "pointer",
+                                    }}
+                                    onClick={() => setActiveHub(hub.name)}>
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-2xl">{hub.emoji}</span>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-bold text-white">{hub.name}</p>
+                                            <p className="text-[11px] text-white/50">{hub.members} members</p>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                                                style={{ background: "rgba(255,255,255,0.15)", color: "#4ade80" }}>
+                                                ↑ {hub.trend}
+                                            </span>
+                                            <button
+                                                onClick={e => { e.stopPropagation(); onToggleJoin(hub.name); }}
+                                                className="text-[10px] px-2 py-1 rounded-lg font-semibold transition-all hover:opacity-80"
+                                                style={isJoined
+                                                    ? { background: "rgba(255,255,255,0.2)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)" }
+                                                    : { background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.15)" }}>
+                                                {isJoined ? "Joined ✓" : "Join +"}
+                                            </button>
+                                        </div>
                                     </div>
-                                </button>
-                                {/* Join / Leave toggle */}
-                                <button
-                                    onClick={() => onToggleJoin(hub.name)}
-                                    className="text-xs px-2.5 py-1.5 rounded-lg font-semibold shrink-0 transition-all hover:opacity-80"
-                                    style={isJoined
-                                        ? { background: `${hub.color}20`, color: hub.color, border: `1px solid ${hub.color}40` }
-                                        : { background: "var(--surface2)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
-                                    {isJoined ? "✓" : "+"}
-                                </button>
-                            </div>
-                        );
-                    })}
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
 
-                {/* Suggested friends */}
-                <h3 className="text-sm font-bold mb-3" style={{ fontFamily: "Syne, sans-serif" }}>Suggested Friends</h3>
-                <div className="space-y-2">
-                    {[
-                        { name: "Jordan Lee", handle: "@jordanlee", avatar: "💪", bg: "linear-gradient(135deg, #064e3b, #065f46)" },
-                        { name: "Sam Chen", handle: "@samchen", avatar: "💻", bg: "linear-gradient(135deg, #1c1917, #44403c)" },
-                        { name: "Maya Patel", handle: "@mayapatel", avatar: "🎬", bg: "linear-gradient(135deg, #831843, #9d174d)" },
-                    ].map(friend => (
-                        <div key={friend.handle}
-                            className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
-                            style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}>
-                            <div className="w-8 h-8 rounded-xl flex items-center justify-center text-sm shrink-0"
-                                style={{ background: friend.bg }}>
-                                {friend.avatar}
+                <div className="h-px mb-5" style={{ background: "var(--border)" }} />
+
+                {/* ── People You May Know ── */}
+                <div>
+                    <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-sm font-bold" style={{ fontFamily: "Syne, sans-serif" }}>
+                            👋 People You May Know
+                        </h2>
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full"
+                            style={{ background: "rgba(139,92,246,0.12)", color: "#a78bfa" }}>
+                            See all
+                        </span>
+                    </div>
+                    <div className="space-y-2">
+                        {[
+                            { name: "Jordan Lee", handle: "@jordanlee", avatar: "💪", bg: "linear-gradient(135deg, #064e3b, #065f46)", mutualHubs: ["Fitness", "Cooking"], accent: "#10b981" },
+                            { name: "Sam Chen", handle: "@samchen", avatar: "💻", bg: "linear-gradient(135deg, #1c1917, #44403c)", mutualHubs: ["Technology", "Gaming"], accent: "#f59e0b" },
+                            { name: "Maya Patel", handle: "@mayapatel", avatar: "🎬", bg: "linear-gradient(135deg, #831843, #9d174d)", mutualHubs: ["Movies"], accent: "#ec4899" },
+                            { name: "Chris Booker", handle: "@chrisbooker", avatar: "📸", bg: "linear-gradient(135deg, #1e3a5f, #1e40af)", mutualHubs: ["Photography", "Cars"], accent: "#6366f1" },
+                            { name: "Taylor Kim", handle: "@taylorkim", avatar: "🍳", bg: "linear-gradient(135deg, #14532d, #166534)", mutualHubs: ["Cooking", "Fitness"], accent: "#ef4444" },
+                        ].slice(0, 3).map(friend => (
+                            <div key={friend.handle}
+                                className="rounded-xl p-3 transition-all hover:scale-[1.01]"
+                                style={{
+                                    background: "var(--surface)",
+                                    border: "1px solid var(--border)",
+                                    boxShadow: `0 2px 12px ${friend.accent}08`,
+                                }}>
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0"
+                                        style={{ background: friend.bg, boxShadow: `0 3px 8px ${friend.accent}25` }}>
+                                        {friend.avatar}
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-xs font-semibold truncate">{friend.name}</p>
+                                        <p className="text-[11px] truncate" style={{ color: "var(--text-muted)" }}>{friend.handle}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex flex-wrap gap-1">
+                                        {friend.mutualHubs.map(hub => (
+                                            <span key={hub} className="text-[9px] px-1.5 py-0.5 rounded-full font-medium"
+                                                style={{ background: `${friend.accent}15`, color: friend.accent, border: `1px solid ${friend.accent}25` }}>
+                                                {hub}
+                                            </span>
+                                        ))}
+                                        <span className="text-[9px] px-1 py-0.5" style={{ color: "var(--text-muted)" }}>mutual</span>
+                                    </div>
+                                    <button className="text-[10px] px-2.5 py-1 rounded-lg font-semibold shrink-0 transition-all hover:opacity-90"
+                                        style={{
+                                            background: "rgba(139,92,246,0.15)",
+                                            color: "#a78bfa",
+                                            border: "1px solid rgba(139,92,246,0.2)",
+                                        }}>
+                                        Follow
+                                    </button>
+                                </div>
                             </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="text-xs font-semibold truncate">{friend.name}</p>
-                                <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>{friend.handle}</p>
-                            </div>
-                            <button className="text-xs px-2.5 py-1 rounded-lg font-semibold shrink-0"
-                                style={{ background: "rgba(139,92,246,0.15)", color: "#a78bfa", border: "1px solid rgba(139,92,246,0.3)" }}>
-                                Follow
-                            </button>
-                        </div>
-                    ))}
+                        ))}
+                    </div>
                 </div>
             </aside>
+
+            {/* Create post modal */}
+            {showCompose && <CreatePostModal onClose={() => setShowCompose(false)} onPost={handleNewPost} />}
         </div>
     );
 }

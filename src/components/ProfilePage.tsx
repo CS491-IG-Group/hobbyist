@@ -348,7 +348,7 @@ function EditProfileModal({
 }
 
 // ─── Profile Page ─────────────────────────────────────────────────────────────
-export default function ProfilePage() {
+export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () => void }) {
     const [activeTab, setActiveTab] = useState<"posts" | "hubs" | "badges">("posts");
     const [showEditModal, setShowEditModal] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
@@ -462,6 +462,7 @@ export default function ProfilePage() {
                             Edit Profile
                         </button>
                         <button
+                            onClick={() => onOpenSettings?.()}
                             className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
                             style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)" }}
                         >
