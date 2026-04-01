@@ -100,9 +100,14 @@ const FILTERS = ["All", "Cars", "Fitness", "Technology", "Movies", "Photography"
 
 const HUBS_LIST = ["Cars", "Fitness", "Technology", "Movies", "Photography", "Cooking", "Gaming"];
 
+const HUB_COLORS: Record<string, string> = {
+    Cars: "#3b82f6", Fitness: "#10b981", Technology: "#f59e0b",
+    Movies: "#ec4899", Photography: "#6366f1", Cooking: "#ef4444", Gaming: "#8b5cf6",
+};
+
 function HeartIcon({ filled }: { filled: boolean }) {
     return (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
             <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
         </svg>
     );
@@ -110,115 +115,128 @@ function HeartIcon({ filled }: { filled: boolean }) {
 
 function CommentIcon() {
     return (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
     );
 }
 
-function RepostIcon() {
-    return (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="17 1 21 5 17 9" />
-            <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-            <polyline points="7 23 3 19 7 15" />
-            <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-        </svg>
-    );
-}
+// Assign a random-ish height class per post so masonry looks varied
+const HEIGHT_CLASSES = ["h-48", "h-56", "h-64", "h-72", "h-52", "h-60"];
 
 interface PostCardProps {
     post: typeof POSTS[0];
     userId: string | null;
     sessionId: string;
+    heightClass: string;
 }
 
-function PostCard({ post, userId, sessionId }: PostCardProps) {
+function PostCard({ post, userId, sessionId, heightClass }: PostCardProps) {
     const [liked, setLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(post.likes);
+    const [hovered, setHovered] = useState(false);
 
-    const handleLike = async () => {
+    const handleLike = async (e: React.MouseEvent) => {
+        e.stopPropagation();
         setLiked(!liked);
         setLikeCount(liked ? likeCount - 1 : likeCount + 1);
-
         await logContentEvent({
-            userId,
-            sessionId,
-            eventType: "like",
-            postId: post.id,
-            uiLocation: "timeline",
+            userId, sessionId, eventType: "like", postId: post.id, uiLocation: "timeline",
         });
     };
 
-    return (
-        <div className="rounded-2xl p-5 transition-all hover:border-purple-500/30"
-            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+    // Text-only posts get a colored gradient background
+    const isTextOnly = !post.image;
 
-            {/* Header */}
-            <div className="flex items-start justify-between gap-3 mb-3">
-                <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-lg shrink-0"
-                        style={{ background: post.avatarBg }}>
-                        {post.avatar}
+    return (
+        <div
+            className="break-inside-avoid mb-4 rounded-2xl overflow-hidden cursor-pointer group"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}>
+
+            {/* Image or colored block */}
+            <div className={`relative ${isTextOnly ? "h-36" : heightClass} overflow-hidden`}>
+                {post.image ? (
+                    <img
+                        src={post.image}
+                        alt=""
+                        className="w-full h-full object-cover transition-transform duration-500"
+                        style={{ transform: hovered ? "scale(1.05)" : "scale(1)" }}
+                    />
+                ) : (
+                    <div className="w-full h-full flex items-center justify-center p-5"
+                        style={{ background: `linear-gradient(135deg, ${post.hubColor}30, ${post.hubColor}10)` }}>
+                        <p className="text-sm font-medium text-center leading-relaxed"
+                            style={{ color: "var(--text)", fontFamily: "Syne, sans-serif" }}>
+                            {post.text}
+                        </p>
                     </div>
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold">{post.user}</span>
-                            <span className="text-xs" style={{ color: "var(--text-muted)" }}>{post.handle}</span>
-                        </div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                                style={{
-                                    background: `${post.hubColor}20`,
-                                    color: post.hubColor,
-                                    border: `1px solid ${post.hubColor}40`
-                                }}>
-                                {post.hub}
-                            </span>
-                            <span className="text-xs" style={{ color: "var(--text-muted)" }}>{post.time}</span>
-                        </div>
-                    </div>
+                )}
+
+                {/* Hub pill — top left */}
+                <div className="absolute top-2.5 left-2.5">
+                    <span className="text-[10px] font-bold px-2 py-1 rounded-full backdrop-blur-md"
+                        style={{
+                            background: `${post.hubColor}cc`,
+                            color: "#fff",
+                            boxShadow: `0 2px 8px ${post.hubColor}60`,
+                        }}>
+                        {post.hub}
+                    </span>
                 </div>
-                <button style={{ color: "var(--text-muted)" }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                        <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
-                    </svg>
+
+                {/* Like button — top right, appears on hover */}
+                <button
+                    onClick={handleLike}
+                    className="absolute top-2.5 right-2.5 w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md transition-all"
+                    style={{
+                        background: liked ? "#ec489980" : "rgba(0,0,0,0.45)",
+                        color: liked ? "#fff" : "rgba(255,255,255,0.8)",
+                        opacity: hovered ? 1 : 0,
+                        transform: hovered ? "scale(1)" : "scale(0.8)",
+                        transition: "opacity 0.2s, transform 0.2s",
+                    }}>
+                    <HeartIcon filled={liked} />
                 </button>
             </div>
 
-            {/* Content */}
-            <p className="text-sm leading-relaxed mb-4" style={{ color: "var(--text-dim)" }}>
-                {post.text}
-            </p>
+            {/* Caption + user info below image */}
+            <div className="px-3 pt-3 pb-3">
+                {/* Show caption only for image posts (text-only already shows it in the card) */}
+                {post.image && (
+                    <p className="text-xs leading-relaxed mb-2.5 line-clamp-2"
+                        style={{ color: "var(--text-dim)" }}>
+                        {post.text}
+                    </p>
+                )}
 
-            {/* Image */}
-            {post.image && (
-                <div className="rounded-xl overflow-hidden mb-4" style={{ maxHeight: "320px" }}>
-                    <img src={post.image} alt="post" className="w-full object-cover" style={{ maxHeight: "320px" }} />
+                {/* User row */}
+                <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-6 h-6 rounded-lg flex items-center justify-center text-xs shrink-0"
+                            style={{ background: post.avatarBg }}>
+                            {post.avatar}
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-xs font-semibold truncate" style={{ color: "var(--text)" }}>{post.user}</p>
+                            <p className="text-[10px] truncate" style={{ color: "var(--text-muted)" }}>{post.time}</p>
+                        </div>
+                    </div>
+
+                    {/* Stats */}
+                    <div className="flex items-center gap-2.5 shrink-0">
+                        <span className="flex items-center gap-1 text-[10px]"
+                            style={{ color: liked ? "#ec4899" : "var(--text-muted)" }}>
+                            <HeartIcon filled={liked} />
+                            {likeCount}
+                        </span>
+                        <span className="flex items-center gap-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
+                            <CommentIcon />
+                            {post.comments}
+                        </span>
+                    </div>
                 </div>
-            )}
-
-            {/* Divider */}
-            <div className="h-px mb-3" style={{ background: "var(--border)" }} />
-
-            {/* Actions */}
-            <div className="flex items-center gap-5">
-                <button onClick={handleLike}
-                    className="flex items-center gap-1.5 text-xs transition-all hover:scale-105"
-                    style={{ color: liked ? "#ec4899" : "var(--text-muted)" }}>
-                    <HeartIcon filled={liked} />
-                    <span>{likeCount}</span>
-                </button>
-                <button className="flex items-center gap-1.5 text-xs transition-all hover:scale-105"
-                    style={{ color: "var(--text-muted)" }}>
-                    <CommentIcon />
-                    <span>{post.comments}</span>
-                </button>
-                <button className="flex items-center gap-1.5 text-xs transition-all hover:scale-105"
-                    style={{ color: "var(--text-muted)" }}>
-                    <RepostIcon />
-                    <span>{post.reposts}</span>
-                </button>
             </div>
         </div>
     );
@@ -236,10 +254,7 @@ function CreatePostModal({ onClose, onPost }: { onClose: () => void; onPost: (te
             <div className="w-full max-w-lg rounded-2xl overflow-hidden"
                 onClick={e => e.stopPropagation()}
                 style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-
-                {/* Header */}
-                <div className="flex items-center justify-between px-5 py-4"
-                    style={{ borderBottom: "1px solid var(--border)" }}>
+                <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
                     <h2 className="text-base font-bold" style={{ fontFamily: "Syne, sans-serif" }}>Create Post</h2>
                     <button onClick={onClose} style={{ color: "var(--text-muted)" }}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -247,20 +262,15 @@ function CreatePostModal({ onClose, onPost }: { onClose: () => void; onPost: (te
                         </svg>
                     </button>
                 </div>
-
-                {/* Body */}
                 <div className="p-5">
                     <div className="flex items-center gap-3 mb-4">
                         <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0"
-                            style={{ background: "linear-gradient(135deg, #1e1b4b, #4c1d95)" }}>
-                            ✨
-                        </div>
+                            style={{ background: "linear-gradient(135deg, #1e1b4b, #4c1d95)" }}>✨</div>
                         <div>
                             <p className="text-sm font-semibold">You</p>
                             <p className="text-xs" style={{ color: "var(--text-muted)" }}>Posting to orbit.r</p>
                         </div>
                     </div>
-
                     <textarea
                         placeholder="What's on your mind? Share with your hubs..."
                         value={text}
@@ -269,13 +279,11 @@ function CreatePostModal({ onClose, onPost }: { onClose: () => void; onPost: (te
                         className="w-full bg-transparent outline-none text-sm resize-none leading-relaxed"
                         style={{ color: "var(--text)", caretColor: "#a78bfa" }}
                     />
-
                     <div className="flex justify-end mb-4">
                         <span className="text-xs" style={{ color: text.length > maxChars * 0.8 ? "#f59e0b" : "var(--text-muted)" }}>
                             {text.length}/{maxChars}
                         </span>
                     </div>
-
                     <div className="mb-5">
                         <p className="text-xs font-semibold mb-2" style={{ color: "var(--text-muted)" }}>Post to hub</p>
                         <div className="flex flex-wrap gap-2">
@@ -293,9 +301,7 @@ function CreatePostModal({ onClose, onPost }: { onClose: () => void; onPost: (te
                             ))}
                         </div>
                     </div>
-
                     <div className="h-px mb-4" style={{ background: "var(--border)" }} />
-
                     <div className="flex items-center justify-between">
                         <div className="flex gap-3">
                             <button style={{ color: "var(--text-muted)" }} title="Add image">
@@ -335,11 +341,6 @@ interface TimelinePageProps {
     sessionId: string;
 }
 
-const HUB_COLORS: Record<string, string> = {
-    Cars: "#3b82f6", Fitness: "#10b981", Technology: "#f59e0b",
-    Movies: "#ec4899", Photography: "#6366f1", Cooking: "#ef4444", Gaming: "#8b5cf6",
-};
-
 export default function TimelinePage({ joinedHubs, onToggleJoin, userId, sessionId }: TimelinePageProps) {
     const [activeFilter, setActiveFilter] = useState("All");
     const [showCompose, setShowCompose] = useState(false);
@@ -365,17 +366,10 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
         setPosts(prev => [newPost, ...prev]);
     };
 
-    const filtered = activeFilter === "All"
-        ? posts
-        : posts.filter(p => p.hub === activeFilter);
+    const filtered = activeFilter === "All" ? posts : posts.filter(p => p.hub === activeFilter);
 
     useEffect(() => {
-        logContentEvent({
-            userId,
-            sessionId,
-            eventType: "view",
-            uiLocation: "timeline",
-        });
+        logContentEvent({ userId, sessionId, eventType: "view", uiLocation: "timeline" });
     }, [userId, sessionId]);
 
     if (activeHub) {
@@ -388,17 +382,22 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
             />
         );
     }
+
     return (
         <div className="flex flex-1 min-h-screen" style={{ background: "var(--bg)" }}>
-
-            {/* Feed */}
             <div className="flex-1 overflow-y-auto">
                 <div className="px-6 py-6">
 
-                    <h1 className="text-xl font-bold mb-5" style={{ fontFamily: "Syne, sans-serif" }}>Timeline</h1>
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-5">
+                        <h1 className="text-xl font-bold" style={{ fontFamily: "Syne, sans-serif" }}>Timeline</h1>
+                        <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: "var(--surface2)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
+                            {filtered.length} posts
+                        </span>
+                    </div>
 
                     {/* Filter pills */}
-                    <div className="flex gap-2 overflow-x-auto pb-3 mb-5 scrollbar-hide">
+                    <div className="flex gap-2 overflow-x-auto pb-3 mb-6 scrollbar-hide">
                         {FILTERS.map(f => (
                             <button key={f} onClick={() => setActiveFilter(f)}
                                 className="px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all"
@@ -412,13 +411,18 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
                         ))}
                     </div>
 
-                    {/* Posts */}
-                    <div className="space-y-3">
-                        {filtered.map(post => (
-                            <PostCard key={post.id} post={post} userId={userId} sessionId={sessionId} />
+                    {/* Masonry grid — 2 columns on md+, 1 on mobile */}
+                    <div className="columns-1 md:columns-2 gap-4">
+                        {filtered.map((post, i) => (
+                            <PostCard
+                                key={post.id}
+                                post={post}
+                                userId={userId}
+                                sessionId={sessionId}
+                                heightClass={HEIGHT_CLASSES[i % HEIGHT_CLASSES.length]}
+                            />
                         ))}
                     </div>
-
                 </div>
 
                 {/* Floating compose button */}
@@ -438,42 +442,28 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
             </div>
 
             {/* Right sidebar — Trending Hubs & People You May Know */}
-            <aside className="hidden lg:block w-80 shrink-0 p-5"
-                style={{ borderLeft: "1px solid var(--border)" }}>
+            <aside className="hidden lg:block w-80 shrink-0 p-5" style={{ borderLeft: "1px solid var(--border)" }}>
 
-                {/* ── Trending Hubs ── */}
+                {/* Trending Hubs */}
                 <div className="mb-6">
                     <div className="flex items-center justify-between mb-3">
-                        <h2 className="text-sm font-bold" style={{ fontFamily: "Syne, sans-serif" }}>
-                            🔥 Trending Hubs
-                        </h2>
+                        <h2 className="text-sm font-bold" style={{ fontFamily: "Syne, sans-serif" }}>🔥 Trending Hubs</h2>
                         <span className="text-[10px] font-medium px-2 py-0.5 rounded-full"
-                            style={{ background: "rgba(139,92,246,0.12)", color: "#a78bfa" }}>
-                            Explore all
-                        </span>
+                            style={{ background: "rgba(139,92,246,0.12)", color: "#a78bfa" }}>Explore all</span>
                     </div>
                     <div className="space-y-2">
                         {[
                             { name: "Cars", members: "18.2k", color: "#3b82f6", emoji: "🚗", trend: "+12%", bg: "linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%)" },
                             { name: "Fitness", members: "24.5k", color: "#10b981", emoji: "💪", trend: "+8%", bg: "linear-gradient(135deg, #064e3b 0%, #059669 100%)" },
                             { name: "Technology", members: "31.1k", color: "#f59e0b", emoji: "💻", trend: "+21%", bg: "linear-gradient(135deg, #78350f 0%, #d97706 100%)" },
-                            { name: "Movies", members: "15.8k", color: "#ec4899", emoji: "🎬", trend: "+5%", bg: "linear-gradient(135deg, #831843 0%, #db2777 100%)" },
-                            { name: "Photography", members: "9.3k", color: "#6366f1", emoji: "📸", trend: "+17%", bg: "linear-gradient(135deg, #312e81 0%, #6366f1 100%)" },
-                            { name: "Cooking", members: "11.7k", color: "#ef4444", emoji: "🍳", trend: "+9%", bg: "linear-gradient(135deg, #7f1d1d 0%, #dc2626 100%)" },
-                        ].slice(0, 3).map(hub => {
+                        ].map(hub => {
                             const isJoined = joinedHubs.includes(hub.name);
                             return (
                                 <div key={hub.name}
-                                    className="rounded-xl p-3 transition-all hover:scale-[1.02] hover:-translate-y-0.5 h-14 flex items-center"
-                                    style={{
-                                        background: hub.bg,
-                                        border: "1px solid rgba(255,255,255,0.1)",
-                                        backdropFilter: "blur(12px)",
-                                        boxShadow: `0 4px 16px ${hub.color}20`,
-                                        cursor: "pointer",
-                                    }}
+                                    className="rounded-xl p-3 transition-all hover:scale-[1.02] h-14 flex items-center cursor-pointer"
+                                    style={{ background: hub.bg, border: "1px solid rgba(255,255,255,0.1)", boxShadow: `0 4px 16px ${hub.color}20` }}
                                     onClick={() => setActiveHub(hub.name)}>
-                                    <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-3 w-full">
                                         <span className="text-2xl">{hub.emoji}</span>
                                         <div className="flex-1 min-w-0">
                                             <p className="text-sm font-bold text-white">{hub.name}</p>
@@ -481,9 +471,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
                                         </div>
                                         <div className="flex items-center gap-2 shrink-0">
                                             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
-                                                style={{ background: "rgba(255,255,255,0.15)", color: "#4ade80" }}>
-                                                ↑ {hub.trend}
-                                            </span>
+                                                style={{ background: "rgba(255,255,255,0.15)", color: "#4ade80" }}>↑ {hub.trend}</span>
                                             <button
                                                 onClick={e => { e.stopPropagation(); onToggleJoin(hub.name); }}
                                                 className="text-[10px] px-2 py-1 rounded-lg font-semibold transition-all hover:opacity-80"
@@ -502,35 +490,25 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
 
                 <div className="h-px mb-5" style={{ background: "var(--border)" }} />
 
-                {/* ── People You May Know ── */}
+                {/* People You May Know */}
                 <div>
                     <div className="flex items-center justify-between mb-3">
-                        <h2 className="text-sm font-bold" style={{ fontFamily: "Syne, sans-serif" }}>
-                            👋 People You May Know
-                        </h2>
+                        <h2 className="text-sm font-bold" style={{ fontFamily: "Syne, sans-serif" }}>👋 People You May Know</h2>
                         <span className="text-[10px] font-medium px-2 py-0.5 rounded-full"
-                            style={{ background: "rgba(139,92,246,0.12)", color: "#a78bfa" }}>
-                            See all
-                        </span>
+                            style={{ background: "rgba(139,92,246,0.12)", color: "#a78bfa" }}>See all</span>
                     </div>
                     <div className="space-y-2">
                         {[
                             { name: "Jordan Lee", handle: "@jordanlee", avatar: "💪", bg: "linear-gradient(135deg, #064e3b, #065f46)", mutualHubs: ["Fitness", "Cooking"], accent: "#10b981" },
                             { name: "Sam Chen", handle: "@samchen", avatar: "💻", bg: "linear-gradient(135deg, #1c1917, #44403c)", mutualHubs: ["Technology", "Gaming"], accent: "#f59e0b" },
                             { name: "Maya Patel", handle: "@mayapatel", avatar: "🎬", bg: "linear-gradient(135deg, #831843, #9d174d)", mutualHubs: ["Movies"], accent: "#ec4899" },
-                            { name: "Chris Booker", handle: "@chrisbooker", avatar: "📸", bg: "linear-gradient(135deg, #1e3a5f, #1e40af)", mutualHubs: ["Photography", "Cars"], accent: "#6366f1" },
-                            { name: "Taylor Kim", handle: "@taylorkim", avatar: "🍳", bg: "linear-gradient(135deg, #14532d, #166534)", mutualHubs: ["Cooking", "Fitness"], accent: "#ef4444" },
-                        ].slice(0, 3).map(friend => (
+                        ].map(friend => (
                             <div key={friend.handle}
                                 className="rounded-xl p-3 transition-all hover:scale-[1.01]"
-                                style={{
-                                    background: "var(--surface)",
-                                    border: "1px solid var(--border)",
-                                    boxShadow: `0 2px 12px ${friend.accent}08`,
-                                }}>
+                                style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
                                 <div className="flex items-center gap-3 mb-2">
                                     <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0"
-                                        style={{ background: friend.bg, boxShadow: `0 3px 8px ${friend.accent}25` }}>
+                                        style={{ background: friend.bg }}>
                                         {friend.avatar}
                                     </div>
                                     <div className="min-w-0 flex-1">
@@ -549,11 +527,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
                                         <span className="text-[9px] px-1 py-0.5" style={{ color: "var(--text-muted)" }}>mutual</span>
                                     </div>
                                     <button className="text-[10px] px-2.5 py-1 rounded-lg font-semibold shrink-0 transition-all hover:opacity-90"
-                                        style={{
-                                            background: "rgba(139,92,246,0.15)",
-                                            color: "#a78bfa",
-                                            border: "1px solid rgba(139,92,246,0.2)",
-                                        }}>
+                                        style={{ background: "rgba(139,92,246,0.15)", color: "#a78bfa", border: "1px solid rgba(139,92,246,0.2)" }}>
                                         Follow
                                     </button>
                                 </div>
@@ -563,7 +537,6 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
                 </div>
             </aside>
 
-            {/* Create post modal */}
             {showCompose && <CreatePostModal onClose={() => setShowCompose(false)} onPost={handleNewPost} />}
         </div>
     );
