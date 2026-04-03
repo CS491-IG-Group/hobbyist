@@ -38,7 +38,7 @@ export async function logContentEvent(params: LogContentEventParams) {
     dwellMs,
     uiLocation,
     deviceType,
-    metadata,
+    // metadata: reserved for a future DB column; callers may still pass it for local debugging
   } = params;
 
   if (!userId || !sessionId) {
@@ -56,7 +56,6 @@ export async function logContentEvent(params: LogContentEventParams) {
       ui_location: uiLocation ?? null,
       device_type: deviceType ?? inferDeviceType(),
       session_id: sessionId,
-      metadata: metadata ?? {},
     });
     if (error && process.env.NODE_ENV === "development") {
       console.warn("[analytics] content_events insert:", error.message);
