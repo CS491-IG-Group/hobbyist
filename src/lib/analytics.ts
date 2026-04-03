@@ -4,9 +4,7 @@ import { supabase } from "./supabase";
 
 export type ContentEventType = "view" | "click" | "like" | "save" | "hide" | "report";
 
-export type ContentEventMetadata = Record<string, unknown>;
-
-export interface LogContentEventParams {
+interface LogContentEventParams {
   userId: string | null;
   sessionId: string;
   eventType: ContentEventType;
@@ -16,37 +14,17 @@ export interface LogContentEventParams {
   dwellMs?: number;
   uiLocation?: string;
   deviceType?: string;
-  metadata?: ContentEventMetadata;
-}
-
-export function inferDeviceType(): string {
-  if (typeof window === "undefined") return "web";
-  const ua = navigator.userAgent;
-  if (/Tablet|iPad/i.test(ua)) return "tablet";
-  if (/Mobi|Android/i.test(ua)) return "mobile";
-  return "desktop";
 }
 
 export async function logContentEvent(params: LogContentEventParams) {
-  const {
-    userId,
-    sessionId,
-    eventType,
-    postId,
-    itemId,
-    hobbyId,
-    dwellMs,
-    uiLocation,
-    deviceType,
-    metadata,
-  } = params;
+  const { userId, sessionId, eventType, postId, itemId, hobbyId, dwellMs, uiLocation, deviceType } = params;
 
-  if (!userId || !sessionId) {
+  if (!userId) {
     return;
   }
 
   try {
-    const { error } = await supabase.from("content_events").insert({
+    await supabase.from("content_events").insert({
       user_id: userId,
       post_id: postId ?? null,
       item_id: itemId ?? null,
@@ -54,14 +32,11 @@ export async function logContentEvent(params: LogContentEventParams) {
       event_type: eventType,
       dwell_ms: dwellMs ?? null,
       ui_location: uiLocation ?? null,
-      device_type: deviceType ?? inferDeviceType(),
+      device_type: deviceType ?? (typeof window !== "undefined" ? "web" : null),
       session_id: sessionId,
-      metadata: metadata ?? {},
     });
-    if (error && process.env.NODE_ENV === "development") {
-      console.warn("[analytics] content_events insert:", error.message);
-    }
   } catch {
     // Swallow client-side analytics errors; they shouldn't break UX.
   }
 }
+

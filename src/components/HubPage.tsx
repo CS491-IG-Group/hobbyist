@@ -1,7 +1,6 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { getHubById, getCategoryById, type HubItem } from "./hubData";
-import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 
 /* ------------------------------------------------------------------ */
 /*  Icons                                                              */
@@ -78,29 +77,10 @@ interface HubPageProps {
 }
 
 export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: HubPageProps) {
-    const { userId, sessionId } = useAnalytics();
     const [activeTab, setActiveTab] = useState<"recent" | "popular">("recent");
 
     const category = getCategoryById(categoryId);
     const hub = getHubById(categoryId, hubId);
-
-    useEffect(() => {
-        const cat = getCategoryById(categoryId);
-        const h = getHubById(categoryId, hubId);
-        if (!h || !cat) return;
-        void logContentEvent({
-            userId,
-            sessionId,
-            eventType: "view",
-            uiLocation: "discover",
-            metadata: {
-                screen: "hub",
-                category_id: categoryId,
-                hub_id: hubId,
-                hub_name: h.name,
-            },
-        });
-    }, [userId, sessionId, categoryId, hubId]);
 
     if (!hub || !category) {
         return (
@@ -114,21 +94,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
         <div className="max-w-5xl mx-auto px-6 py-8">
             {/* Back button */}
             <button
-                onClick={() => {
-                    void logContentEvent({
-                        userId,
-                        sessionId,
-                        eventType: "click",
-                        uiLocation: "discover",
-                        metadata: {
-                            action: "back_to_category",
-                            category_id: categoryId,
-                            hub_id: hubId,
-                            hub_name: hub.name,
-                        },
-                    });
-                    onBack();
-                }}
+                onClick={onBack}
                 className="flex items-center gap-1 mb-6 text-sm font-medium transition-all hover:opacity-80"
                 style={{ color: "#a78bfa" }}
             >
@@ -175,19 +141,6 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                         <strong className="text-white">{hub.members.toLocaleString()}</strong> members
                     </span>
                     <button
-                        type="button"
-                        onClick={() => void logContentEvent({
-                            userId,
-                            sessionId,
-                            eventType: "click",
-                            uiLocation: "discover",
-                            metadata: {
-                                action: "discover_hub_join_click",
-                                category_id: categoryId,
-                                hub_id: hubId,
-                                hub_name: hub.name,
-                            },
-                        })}
                         className="px-5 py-1.5 rounded-full text-sm font-semibold transition-all hover:scale-105"
                         style={{
                             background: "rgba(255,255,255,0.2)",
@@ -219,21 +172,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                             style={{ border: "1px solid var(--border)" }}
                         >
                             <button
-                                onClick={() => {
-                                    void logContentEvent({
-                                        userId,
-                                        sessionId,
-                                        eventType: "click",
-                                        uiLocation: "discover",
-                                        metadata: {
-                                            action: "hub_posts_tab",
-                                            tab: "recent",
-                                            category_id: categoryId,
-                                            hub_id: hubId,
-                                        },
-                                    });
-                                    setActiveTab("recent");
-                                }}
+                                onClick={() => setActiveTab("recent")}
                                 className="px-4 py-1.5 transition-all"
                                 style={{
                                     background: activeTab === "recent" ? "var(--surface2)" : "transparent",
@@ -243,21 +182,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                                 recent
                             </button>
                             <button
-                                onClick={() => {
-                                    void logContentEvent({
-                                        userId,
-                                        sessionId,
-                                        eventType: "click",
-                                        uiLocation: "discover",
-                                        metadata: {
-                                            action: "hub_posts_tab",
-                                            tab: "popular",
-                                            category_id: categoryId,
-                                            hub_id: hubId,
-                                        },
-                                    });
-                                    setActiveTab("popular");
-                                }}
+                                onClick={() => setActiveTab("popular")}
                                 className="px-4 py-1.5 transition-all"
                                 style={{
                                     background: activeTab === "popular" ? "var(--surface2)" : "transparent",
@@ -286,26 +211,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                     </h2>
                     <div className="space-y-3">
                         {hub.items.map((item, i) => (
-                            <ItemCard
-                                key={i}
-                                item={item}
-                                onClick={() => {
-                                    void logContentEvent({
-                                        userId,
-                                        sessionId,
-                                        eventType: "click",
-                                        uiLocation: "discover",
-                                        metadata: {
-                                            action: "open_item",
-                                            category_id: categoryId,
-                                            hub_id: hubId,
-                                            item_index: i,
-                                            item_name: item.name,
-                                        },
-                                    });
-                                    onSelectItem?.(i);
-                                }}
-                            />
+                            <ItemCard key={i} item={item} onClick={() => onSelectItem?.(i)} />
                         ))}
                     </div>
                 </div>

@@ -1,8 +1,7 @@
 "use client";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import HubPage from "./HubsProfile";
-import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
-import { useContentImpression } from "../lib/useContentImpression";
+import { logContentEvent } from "../lib/analytics";
 
 const POSTS = [
     {
@@ -127,74 +126,22 @@ const HEIGHT_CLASSES = ["h-48", "h-56", "h-64", "h-72", "h-52", "h-60"];
 
 interface PostCardProps {
     post: typeof POSTS[0];
+    userId: string | null;
+    sessionId: string;
     heightClass: string;
 }
 
-function PostCard({ post, heightClass }: PostCardProps) {
-    const { userId, sessionId } = useAnalytics();
+function PostCard({ post, userId, sessionId, heightClass }: PostCardProps) {
     const [liked, setLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(post.likes);
-    const [saved, setSaved] = useState(false);
     const [hovered, setHovered] = useState(false);
-    const [menuOpen, setMenuOpen] = useState(false);
-    const menuRef = useRef<HTMLDivElement>(null);
-
-    const impressionRef = useContentImpression({
-        userId,
-        sessionId,
-        uiLocation: "timeline",
-        postId: post.id,
-        metadata: { kind: "post_impression", hub: post.hub, client_post_id: post.id },
-    });
-
-    useEffect(() => {
-        if (!menuOpen) return;
-        const close = (e: MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-        };
-        document.addEventListener("click", close);
-        return () => document.removeEventListener("click", close);
-    }, [menuOpen]);
 
     const handleLike = async (e: React.MouseEvent) => {
         e.stopPropagation();
         setLiked(!liked);
         setLikeCount(liked ? likeCount - 1 : likeCount + 1);
         await logContentEvent({
-            userId,
-            sessionId,
-            eventType: "like",
-            postId: post.id,
-            uiLocation: "timeline",
-            metadata: { hub: post.hub, author_handle: post.handle },
-        });
-    };
-
-    const toggleSave = async (e: React.MouseEvent) => {
-        e.stopPropagation();
-        const next = !saved;
-        setSaved(next);
-        if (next) {
-            await logContentEvent({
-                userId,
-                sessionId,
-                eventType: "save",
-                postId: post.id,
-                uiLocation: "timeline",
-                metadata: { hub: post.hub, client_post_id: post.id },
-            });
-        }
-    };
-
-    const logHideOrReport = async (kind: "hide" | "report") => {
-        setMenuOpen(false);
-        await logContentEvent({
-            userId,
-            sessionId,
-            eventType: kind,
-            postId: post.id,
-            uiLocation: "timeline",
-            metadata: { hub: post.hub, client_post_id: post.id },
+            userId, sessionId, eventType: "like", postId: post.id, uiLocation: "timeline",
         });
     };
 
@@ -203,8 +150,7 @@ function PostCard({ post, heightClass }: PostCardProps) {
 
     return (
         <div
-            ref={impressionRef}
-            className="break-inside-avoid mb-4 rounded-2xl overflow-hidden cursor-pointer group relative"
+            className="break-inside-avoid mb-4 rounded-2xl overflow-hidden cursor-pointer group"
             style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}>
@@ -240,63 +186,19 @@ function PostCard({ post, heightClass }: PostCardProps) {
                     </span>
                 </div>
 
-                {/* Actions — top right */}
-                <div
-                    className="absolute top-2.5 right-2.5 flex items-center gap-1 transition-all"
+                {/* Like button — top right, appears on hover */}
+                <button
+                    onClick={handleLike}
+                    className="absolute top-2.5 right-2.5 w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md transition-all"
                     style={{
-                        opacity: hovered || menuOpen || saved ? 1 : 0,
-                        transform: hovered || menuOpen ? "scale(1)" : "scale(0.85)",
-                    }}
-                    onClick={e => e.stopPropagation()}>
-                    <button
-                        onClick={toggleSave}
-                        className="w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md text-xs"
-                        style={{
-                            background: saved ? "rgba(167,139,250,0.85)" : "rgba(0,0,0,0.45)",
-                            color: "#fff",
-                        }}
-                        title={saved ? "Saved" : "Save"}>
-                        {saved ? "✓" : "🔖"}
-                    </button>
-                    <button
-                        onClick={handleLike}
-                        className="w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md"
-                        style={{
-                            background: liked ? "#ec489980" : "rgba(0,0,0,0.45)",
-                            color: liked ? "#fff" : "rgba(255,255,255,0.8)",
-                        }}>
-                        <HeartIcon filled={liked} />
-                    </button>
-                    <div className="relative" ref={menuRef}>
-                        <button
-                            type="button"
-                            onClick={e => { e.stopPropagation(); setMenuOpen(v => !v); }}
-                            className="w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md text-white text-sm font-bold"
-                            style={{ background: "rgba(0,0,0,0.45)" }}>
-                            ···
-                        </button>
-                        {menuOpen && (
-                            <div
-                                className="absolute right-0 mt-1 py-1 rounded-lg text-left min-w-[132px] z-20 shadow-lg"
-                                style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-                                <button
-                                    type="button"
-                                    className="block w-full text-left text-xs px-3 py-2 hover:opacity-80"
-                                    style={{ color: "var(--text)" }}
-                                    onClick={e => { e.stopPropagation(); void logHideOrReport("hide"); }}>
-                                    Hide / not interested
-                                </button>
-                                <button
-                                    type="button"
-                                    className="block w-full text-left text-xs px-3 py-2 hover:opacity-80"
-                                    style={{ color: "#f87171" }}
-                                    onClick={e => { e.stopPropagation(); void logHideOrReport("report"); }}>
-                                    Report
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
+                        background: liked ? "#ec489980" : "rgba(0,0,0,0.45)",
+                        color: liked ? "#fff" : "rgba(255,255,255,0.8)",
+                        opacity: hovered ? 1 : 0,
+                        transform: hovered ? "scale(1)" : "scale(0.8)",
+                        transition: "opacity 0.2s, transform 0.2s",
+                    }}>
+                    <HeartIcon filled={liked} />
+                </button>
             </div>
 
             {/* Caption + user info below image */}
@@ -340,11 +242,7 @@ function PostCard({ post, heightClass }: PostCardProps) {
     );
 }
 
-function CreatePostModal({ onClose, onPost }: {
-    onClose: () => void;
-    onPost: (text: string, hub: string) => void;
-}) {
-    const { userId, sessionId } = useAnalytics();
+function CreatePostModal({ onClose, onPost }: { onClose: () => void; onPost: (text: string, hub: string) => void }) {
     const [text, setText] = React.useState("");
     const [selectedHub, setSelectedHub] = React.useState("");
     const maxChars = 280;
@@ -423,23 +321,7 @@ function CreatePostModal({ onClose, onPost }: {
                             </button>
                         </div>
                         <button
-                            onClick={() => {
-                                if (text.trim() && selectedHub) {
-                                    void logContentEvent({
-                                        userId,
-                                        sessionId,
-                                        eventType: "click",
-                                        uiLocation: "timeline",
-                                        metadata: {
-                                            action: "compose_submit",
-                                            hub: selectedHub,
-                                            char_len: text.trim().length,
-                                        },
-                                    });
-                                    onPost(text.trim(), selectedHub);
-                                    onClose();
-                                }
-                            }}
+                            onClick={() => { if (text.trim() && selectedHub) { onPost(text.trim(), selectedHub); onClose(); } }}
                             disabled={!text.trim() || !selectedHub}
                             className="px-5 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{ background: "var(--gradient-btn)" }}>
@@ -455,10 +337,11 @@ function CreatePostModal({ onClose, onPost }: {
 interface TimelinePageProps {
     joinedHubs: string[];
     onToggleJoin: (hubName: string) => void;
+    userId: string | null;
+    sessionId: string;
 }
 
-export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageProps) {
-    const { userId, sessionId } = useAnalytics();
+export default function TimelinePage({ joinedHubs, onToggleJoin, userId, sessionId }: TimelinePageProps) {
     const [activeFilter, setActiveFilter] = useState("All");
     const [showCompose, setShowCompose] = useState(false);
     const [activeHub, setActiveHub] = useState<string | null>(null);
@@ -516,16 +399,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                     {/* Filter pills */}
                     <div className="flex gap-2 overflow-x-auto pb-3 mb-6 scrollbar-hide">
                         {FILTERS.map(f => (
-                            <button key={f} onClick={() => {
-                                void logContentEvent({
-                                    userId,
-                                    sessionId,
-                                    eventType: "click",
-                                    uiLocation: "timeline",
-                                    metadata: { action: "filter_hub_pill", filter: f, previous: activeFilter },
-                                });
-                                setActiveFilter(f);
-                            }}
+                            <button key={f} onClick={() => setActiveFilter(f)}
                                 className="px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all"
                                 style={{
                                     background: activeFilter === f ? "var(--gradient-btn)" : "var(--surface2)",
@@ -543,6 +417,8 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                             <PostCard
                                 key={post.id}
                                 post={post}
+                                userId={userId}
+                                sessionId={sessionId}
                                 heightClass={HEIGHT_CLASSES[i % HEIGHT_CLASSES.length]}
                             />
                         ))}
@@ -551,16 +427,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
 
                 {/* Floating compose button */}
                 <button
-                    onClick={() => {
-                        void logContentEvent({
-                            userId,
-                            sessionId,
-                            eventType: "click",
-                            uiLocation: "timeline",
-                            metadata: { action: "compose_open_fab" },
-                        });
-                        setShowCompose(true);
-                    }}
+                    onClick={() => setShowCompose(true)}
                     className="fixed bottom-8 z-40 w-14 h-14 rounded-full flex items-center justify-center text-white transition-all hover:scale-110 active:scale-95"
                     style={{
                         right: "calc(320px + 2rem)",
@@ -595,16 +462,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                                 <div key={hub.name}
                                     className="rounded-xl p-3 transition-all hover:scale-[1.02] h-14 flex items-center cursor-pointer"
                                     style={{ background: hub.bg, border: "1px solid rgba(255,255,255,0.1)", boxShadow: `0 4px 16px ${hub.color}20` }}
-                                    onClick={() => {
-                                        void logContentEvent({
-                                            userId,
-                                            sessionId,
-                                            eventType: "click",
-                                            uiLocation: "timeline",
-                                            metadata: { action: "open_hub_from_trending", hub: hub.name },
-                                        });
-                                        setActiveHub(hub.name);
-                                    }}>
+                                    onClick={() => setActiveHub(hub.name)}>
                                     <div className="flex items-center gap-3 w-full">
                                         <span className="text-2xl">{hub.emoji}</span>
                                         <div className="flex-1 min-w-0">
@@ -615,21 +473,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                                             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
                                                 style={{ background: "rgba(255,255,255,0.15)", color: "#4ade80" }}>↑ {hub.trend}</span>
                                             <button
-                                                onClick={e => {
-                                                    e.stopPropagation();
-                                                    void logContentEvent({
-                                                        userId,
-                                                        sessionId,
-                                                        eventType: "click",
-                                                        uiLocation: "timeline",
-                                                        metadata: {
-                                                            action: isJoined ? "leave_hub" : "join_hub",
-                                                            hub: hub.name,
-                                                            source: "timeline_trending_card",
-                                                        },
-                                                    });
-                                                    onToggleJoin(hub.name);
-                                                }}
+                                                onClick={e => { e.stopPropagation(); onToggleJoin(hub.name); }}
                                                 className="text-[10px] px-2 py-1 rounded-lg font-semibold transition-all hover:opacity-80"
                                                 style={isJoined
                                                     ? { background: "rgba(255,255,255,0.2)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)" }
@@ -682,21 +526,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                                         ))}
                                         <span className="text-[9px] px-1 py-0.5" style={{ color: "var(--text-muted)" }}>mutual</span>
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => void logContentEvent({
-                                            userId,
-                                            sessionId,
-                                            eventType: "click",
-                                            uiLocation: "timeline",
-                                            metadata: {
-                                                action: "follow_suggestion",
-                                                target_handle: friend.handle,
-                                                target_name: friend.name,
-                                                mutual_hubs: friend.mutualHubs,
-                                            },
-                                        })}
-                                        className="text-[10px] px-2.5 py-1 rounded-lg font-semibold shrink-0 transition-all hover:opacity-90"
+                                    <button className="text-[10px] px-2.5 py-1 rounded-lg font-semibold shrink-0 transition-all hover:opacity-90"
                                         style={{ background: "rgba(139,92,246,0.15)", color: "#a78bfa", border: "1px solid rgba(139,92,246,0.2)" }}>
                                         Follow
                                     </button>
@@ -707,12 +537,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                 </div>
             </aside>
 
-            {showCompose && (
-                <CreatePostModal
-                    onClose={() => setShowCompose(false)}
-                    onPost={handleNewPost}
-                />
-            )}
+            {showCompose && <CreatePostModal onClose={() => setShowCompose(false)} onPost={handleNewPost} />}
         </div>
     );
 }

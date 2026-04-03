@@ -1,7 +1,5 @@
 "use client";
-import React, { useState, useEffect } from "react";
-import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
-import { useContentImpression } from "../lib/useContentImpression";
+import React, { useState } from "react";
 
 const HUB_POSTS: Record<string, Array<{
     id: number; user: string; handle: string; avatar: string;
@@ -63,52 +61,11 @@ function HeartIcon({ filled }: { filled: boolean }) {
     );
 }
 
-function HubPostCard({
-    post,
-    hubColor,
-    hubName,
-}: {
-    post: typeof HUB_POSTS["Cars"][0];
-    hubColor: string;
-    hubName: string;
-}) {
-    const { userId, sessionId } = useAnalytics();
+function HubPostCard({ post, hubColor }: { post: typeof HUB_POSTS["Cars"][0]; hubColor: string }) {
     const [liked, setLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(post.likes);
-
-    const impressionRef = useContentImpression({
-        userId,
-        sessionId,
-        uiLocation: "hub_profile",
-        postId: post.id,
-        metadata: {
-            kind: "hub_feed_post_impression",
-            hub: hubName,
-            hub_color: hubColor,
-            client_post_key: `${hubName}:${post.id}`,
-        },
-    });
-
-    const onLike = () => {
-        const next = !liked;
-        setLiked(next);
-        setLikeCount(next ? likeCount + 1 : likeCount - 1);
-        void logContentEvent({
-            userId,
-            sessionId,
-            eventType: "like",
-            postId: post.id,
-            uiLocation: "hub_profile",
-            metadata: { hub: hubName, author_handle: post.handle, client_post_key: `${hubName}:${post.id}` },
-        });
-    };
-
     return (
-        <div
-            ref={impressionRef}
-            className="rounded-2xl p-5 transition-all"
-            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
-        >
+        <div className="rounded-2xl p-5 transition-all" style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
             <div className="flex items-center gap-3 mb-3">
                 <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-lg shrink-0" style={{ background: post.avatarBg }}>{post.avatar}</div>
                 <div className="flex-1 min-w-0">
@@ -127,7 +84,7 @@ function HubPostCard({
             )}
             <div className="h-px mb-3" style={{ background: "var(--border)" }} />
             <div className="flex items-center gap-5">
-                <button onClick={onLike}
+                <button onClick={() => { setLiked(!liked); setLikeCount(liked ? likeCount - 1 : likeCount + 1); }}
                     className="flex items-center gap-1.5 text-xs transition-all hover:scale-105"
                     style={{ color: liked ? "#ec4899" : "var(--text-muted)" }}>
                     <HeartIcon filled={liked} /><span>{likeCount}</span>
@@ -149,33 +106,15 @@ interface HubPageProps {
 }
 
 export default function HubsProfile({ hubName, joined, onToggleJoin, onBack }: HubPageProps) {
-    const { userId, sessionId } = useAnalytics();
     const info = HUB_INFO[hubName];
     const posts = HUB_POSTS[hubName] ?? [];
     const [memberCount, setMemberCount] = useState(info.members);
     const [isJoined, setIsJoined] = useState(joined);
 
-    useEffect(() => {
-        void logContentEvent({
-            userId,
-            sessionId,
-            eventType: "view",
-            uiLocation: "hub_profile",
-            metadata: { hub: hubName, source: "timeline" },
-        });
-    }, [userId, sessionId, hubName]);
-
     const handleToggle = () => {
         const joining = !isJoined;
         setIsJoined(joining);
         setMemberCount(prev => joining ? prev + 1 : prev - 1);
-        void logContentEvent({
-            userId,
-            sessionId,
-            eventType: "click",
-            uiLocation: "hub_profile",
-            metadata: { action: joining ? "join_hub" : "leave_hub", hub: hubName, source: "hub_profile_header" },
-        });
         onToggleJoin();
     };
 
@@ -186,16 +125,7 @@ export default function HubsProfile({ hubName, joined, onToggleJoin, onBack }: H
 
             {/* Banner */}
             <div className="relative h-36" style={{ background: info.banner }}>
-                <button onClick={() => {
-                    void logContentEvent({
-                        userId,
-                        sessionId,
-                        eventType: "click",
-                        uiLocation: "hub_profile",
-                        metadata: { action: "back", hub: hubName },
-                    });
-                    onBack();
-                }}
+                <button onClick={onBack}
                     className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold text-white transition-all hover:opacity-80"
                     style={{ background: "rgba(0,0,0,0.35)", backdropFilter: "blur(8px)" }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -240,7 +170,7 @@ export default function HubsProfile({ hubName, joined, onToggleJoin, onBack }: H
                 <h2 className="text-sm font-bold mb-4" style={{ fontFamily: "Syne, sans-serif" }}>Posts</h2>
                 <div className="space-y-3 pb-8">
                     {posts.map(post => (
-                        <HubPostCard key={`${hubName}-${post.id}`} post={post} hubColor={info.color} hubName={hubName} />
+                        <HubPostCard key={post.id} post={post} hubColor={info.color} />
                     ))}
                 </div>
             </div>

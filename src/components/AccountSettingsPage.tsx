@@ -1,6 +1,5 @@
 "use client";
-import React, { useState, useEffect } from "react";
-import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
+import React, { useState } from "react";
 
 interface Props {
   onBack: () => void;
@@ -72,7 +71,6 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 // ─── Account Settings Page ────────────────────────────────────────────────────
 export default function AccountSettingsPage({ onBack, displayName, handle, email }: Props) {
-  const { userId, sessionId } = useAnalytics();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -86,13 +84,6 @@ export default function AccountSettingsPage({ onBack, displayName, handle, email
     // Visual only — no backend call
     if (!currentPassword || !newPassword || !confirmPassword) return;
     if (newPassword !== confirmPassword) return;
-    void logContentEvent({
-      userId,
-      sessionId,
-      eventType: "click",
-      uiLocation: "account_settings",
-      metadata: { action: "password_update_submit_client_only" },
-    });
     setPasswordSuccess(true);
     setCurrentPassword("");
     setNewPassword("");
@@ -107,16 +98,6 @@ export default function AccountSettingsPage({ onBack, displayName, handle, email
     newPassword.length >= 8 &&
     newPassword === confirmPassword;
 
-  useEffect(() => {
-    void logContentEvent({
-      userId,
-      sessionId,
-      eventType: "view",
-      uiLocation: "account_settings",
-      metadata: { screen: "account_settings" },
-    });
-  }, [userId, sessionId]);
-
   return (
     <div className="flex-1 overflow-y-auto" style={{ background: "var(--bg)" }}>
       <div className="max-w-2xl mx-auto px-6 py-8">
@@ -124,16 +105,7 @@ export default function AccountSettingsPage({ onBack, displayName, handle, email
         {/* Back button + Title */}
         <div className="flex items-center gap-3 mb-8">
           <button
-            onClick={() => {
-              void logContentEvent({
-                userId,
-                sessionId,
-                eventType: "click",
-                uiLocation: "account_settings",
-                metadata: { action: "back_to_profile" },
-              });
-              onBack();
-            }}
+            onClick={onBack}
             className="w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:opacity-70"
             style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
           >

@@ -1,8 +1,6 @@
 "use client";
-import React, { useState, useEffect } from "react";
-import { getHubById, getItemByIndex, type ItemReview } from "./hubData";
-import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
-import { useContentImpression } from "../lib/useContentImpression";
+import React, { useState } from "react";
+import { getHubById, getItemByIndex, type HubItem, type ItemReview } from "./hubData";
 
 /* ------------------------------------------------------------------ */
 /*  Icons                                                              */
@@ -141,7 +139,6 @@ export default function ItemDetailPage({
     itemIndex,
     onBack,
 }: ItemDetailPageProps) {
-    const { userId, sessionId } = useAnalytics();
     const hub = getHubById(categoryId, hubId);
     const item = getItemByIndex(categoryId, hubId, itemIndex);
 
@@ -150,40 +147,6 @@ export default function ItemDetailPage({
     const [reviewText, setReviewText] = useState("");
     const [userReviews, setUserReviews] = useState<ItemReview[]>([]);
     const [submitted, setSubmitted] = useState(false);
-
-    const impressionRef = useContentImpression({
-        userId,
-        sessionId,
-        uiLocation: "discover",
-        itemId: itemIndex,
-        enabled: Boolean(hub && item),
-        metadata: {
-            kind: "item_detail_dwell",
-            category_id: categoryId,
-            hub_id: hubId,
-            item_index: itemIndex,
-            item_name: item?.name,
-        },
-    });
-
-    useEffect(() => {
-        const h = getHubById(categoryId, hubId);
-        const it = getItemByIndex(categoryId, hubId, itemIndex);
-        if (!h || !it) return;
-        void logContentEvent({
-            userId,
-            sessionId,
-            eventType: "view",
-            uiLocation: "discover",
-            itemId: itemIndex,
-            metadata: {
-                screen: "item_detail",
-                category_id: categoryId,
-                hub_id: hubId,
-                item_name: it.name,
-            },
-        });
-    }, [userId, sessionId, categoryId, hubId, itemIndex]);
 
     if (!hub || !item) {
         return (
@@ -199,21 +162,6 @@ export default function ItemDetailPage({
 
     function handleSubmitReview() {
         if (userRating === 0 || reviewText.trim().length === 0) return;
-        void logContentEvent({
-            userId,
-            sessionId,
-            eventType: "click",
-            uiLocation: "discover",
-            itemId: itemIndex,
-            metadata: {
-                action: "submit_review",
-                category_id: categoryId,
-                hub_id: hubId,
-                item_name: item.name,
-                rating: userRating,
-                review_char_len: reviewText.trim().length,
-            },
-        });
         const newReview: ItemReview = {
             author: "You",
             avatar: "YO",
@@ -227,25 +175,10 @@ export default function ItemDetailPage({
     }
 
     return (
-        <div ref={impressionRef} className="max-w-3xl mx-auto px-6 py-8">
+        <div className="max-w-3xl mx-auto px-6 py-8">
             {/* Back button */}
             <button
-                onClick={() => {
-                    void logContentEvent({
-                        userId,
-                        sessionId,
-                        eventType: "click",
-                        uiLocation: "discover",
-                        itemId: itemIndex,
-                        metadata: {
-                            action: "back_to_hub",
-                            category_id: categoryId,
-                            hub_id: hubId,
-                            item_name: item.name,
-                        },
-                    });
-                    onBack();
-                }}
+                onClick={onBack}
                 className="flex items-center gap-1 mb-6 text-sm font-medium transition-all hover:opacity-80"
                 style={{ color: "#a78bfa" }}
             >

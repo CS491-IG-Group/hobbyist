@@ -1,7 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 
 const HUBS = [
     { name: "Cars", color: "#3b82f6", emoji: "🚗" },
@@ -350,21 +349,10 @@ function EditProfileModal({
 
 // ─── Profile Page ─────────────────────────────────────────────────────────────
 export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () => void }) {
-    const { userId: analyticsUserId, sessionId } = useAnalytics();
     const [activeTab, setActiveTab] = useState<"posts" | "hubs" | "badges">("posts");
     const [showEditModal, setShowEditModal] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
     const [profile, setProfile] = useState<ProfileData>({ display_name: "", handle: "", email: "", bio: "" });
-
-    useEffect(() => {
-        void logContentEvent({
-            userId: analyticsUserId,
-            sessionId,
-            eventType: "view",
-            uiLocation: "profile",
-            metadata: { screen: "profile_main" },
-        });
-    }, [analyticsUserId, sessionId]);
 
     // Load current user on mount
     useEffect(() => {
@@ -474,16 +462,7 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
                             Edit Profile
                         </button>
                         <button
-                            onClick={() => {
-                                void logContentEvent({
-                                    userId: analyticsUserId,
-                                    sessionId,
-                                    eventType: "click",
-                                    uiLocation: "profile",
-                                    metadata: { action: "open_account_settings" },
-                                });
-                                onOpenSettings?.();
-                            }}
+                            onClick={() => onOpenSettings?.()}
                             className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
                             style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)" }}
                         >
@@ -500,16 +479,7 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
                     {(["posts", "hubs", "badges"] as const).map(tab => (
                         <button
                             key={tab}
-                            onClick={() => {
-                                void logContentEvent({
-                                    userId: analyticsUserId,
-                                    sessionId,
-                                    eventType: "click",
-                                    uiLocation: "profile",
-                                    metadata: { action: "profile_tab", tab, previous_tab: activeTab },
-                                });
-                                setActiveTab(tab);
-                            }}
+                            onClick={() => setActiveTab(tab)}
                             className="flex-1 py-2 rounded-lg text-sm font-semibold capitalize transition-all"
                             style={{
                                 background: activeTab === tab ? "var(--gradient-btn)" : "transparent",

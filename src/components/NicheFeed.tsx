@@ -1,6 +1,5 @@
 "use client";
 import React, { useState, useRef, useEffect } from "react";
-import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 
 const CONVERSATIONS = [
     {
@@ -230,20 +229,9 @@ function ChatWindow({ convo, onBack }: { convo: Conversation; onBack: () => void
 }
 
 export default function NicheFeed() {
-    const { userId, sessionId } = useAnalytics();
     const [selected, setSelected] = useState<Conversation | null>(null);
     const [convos, setConvos] = useState(CONVERSATIONS);
     const [search, setSearch] = useState("");
-
-    useEffect(() => {
-        void logContentEvent({
-            userId,
-            sessionId,
-            eventType: "view",
-            uiLocation: "orbit",
-            metadata: { screen: "messages" },
-        });
-    }, [userId, sessionId]);
 
     const filtered = convos.filter(c =>
         c.user.toLowerCase().includes(search.toLowerCase()) ||
@@ -251,17 +239,6 @@ export default function NicheFeed() {
     );
 
     const selectConvo = (convo: Conversation) => {
-        void logContentEvent({
-            userId,
-            sessionId,
-            eventType: "click",
-            uiLocation: "orbit",
-            metadata: {
-                action: "open_conversation",
-                peer_handle: convo.handle,
-                shared_hub: convo.sharedHub,
-            },
-        });
         setSelected(convo);
         setConvos(prev => prev.map(c => c.id === convo.id ? { ...c, unread: 0 } : c));
     };
