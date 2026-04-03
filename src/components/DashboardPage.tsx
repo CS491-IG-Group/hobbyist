@@ -11,6 +11,7 @@ import ProfilePage from "./ProfilePage";
 import AccountSettingsPage from "./AccountSettingsPage";
 import NotificationsPage from "./NotificationsPage";
 import { supabase } from "../lib/supabase";
+import { AnalyticsProvider, logContentEvent } from "../lib/AnalyticsContext";
 
 type SubPage =
   | null
@@ -175,6 +176,13 @@ export default function DashboardPage({ onLogout }: Props) {
   );
 
   function handleNav(id: string) {
+    void logContentEvent({
+      userId,
+      sessionId,
+      eventType: "click",
+      uiLocation: "shell",
+      metadata: { action: "main_nav", target: id, previous: activeNav },
+    });
     setActiveNav(id);
     setSubPage(null);
     setShowAccountSettings(false);
@@ -267,6 +275,7 @@ export default function DashboardPage({ onLogout }: Props) {
   ];
 
   return (
+    <AnalyticsProvider userId={userId} sessionId={sessionId}>
     <div className="flex min-h-screen" style={{ background: "var(--bg)" }}>
       <Sidebar
         activeNav={activeNav}
@@ -284,8 +293,6 @@ export default function DashboardPage({ onLogout }: Props) {
           <TimelinePage
             joinedHubs={joinedHubs}
             onToggleJoin={toggleJoinHub}
-            userId={userId}
-            sessionId={sessionId}
           />
         ) : activeNav === "discover" ? (
           subPage?.type === "item" ? (
@@ -440,5 +447,6 @@ export default function DashboardPage({ onLogout }: Props) {
 
       </aside>}
     </div>
+    </AnalyticsProvider>
   );
 }
