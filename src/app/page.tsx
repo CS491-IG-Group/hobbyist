@@ -1,5 +1,6 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import type { Session } from "@supabase/supabase-js";
 import LoginPage from "@/components/LoginPage";
 import DashboardPage from "@/components/DashboardPage";
 import OnboardingModal from "@/components/OnboardingModal";
@@ -12,22 +13,57 @@ interface OnboardingUser {
   email: string;
 }
 
+/** Prevents indefinite loading if Supabase HTTP never completes. */
+function withTimeout<T>(pending: PromiseLike<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const id = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    Promise.resolve(pending).then(
+      (v) => {
+        clearTimeout(id);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(id);
+        reject(e);
+      }
+    );
+  });
+}
+
+const SESSION_MS = 12_000;
+const PROFILE_MS = 12_000;
+
 export default function Home() {
   const [view, setView] = useState<View>("loading");
   const [onboardingUser, setOnboardingUser] = useState<OnboardingUser | null>(null);
 
-  async function checkSession() {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { setView("login"); return; }
+  const applySession = useCallback(async (session: Session | null) => {
+    if (!session) {
+      setOnboardingUser(null);
+      setView("login");
+      return;
+    }
 
     const user = session.user;
+    let profile: { onboarding_completed: boolean | null } | null = null;
 
-    // Check if user has completed onboarding
-    const { data: profile } = await supabase
-      .from("users")
-      .select("onboarding_completed")
-      .eq("id", user.id)
-      .maybeSingle();
+    try {
+      const res = await withTimeout(
+        supabase
+          .from("users")
+          .select("onboarding_completed")
+          .eq("id", user.id)
+          .maybeSingle(),
+        PROFILE_MS,
+        "users profile"
+      );
+      profile = res.data ?? null;
+    } catch (e) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[auth] users profile fetch failed or stalled — continuing as onboarding", e);
+      }
+      profile = null;
+    }
 
     if (!profile || !profile.onboarding_completed) {
       setOnboardingUser({ id: user.id, email: user.email ?? "" });
@@ -35,36 +71,57 @@ export default function Home() {
     } else {
       setView("dashboard");
     }
+  }, []);
+
+  async function checkSession() {
+    try {
+      const { data: { session }, error } = await withTimeout(
+        supabase.auth.getSession(),
+        SESSION_MS,
+        "getSession"
+      );
+      if (error) throw error;
+      await applySession(session ?? null);
+    } catch (e) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[auth] getSession failed or stalled; showing login", e);
+      }
+      setOnboardingUser(null);
+      setView("login");
+    }
   }
 
   useEffect(() => {
-    checkSession();
+    void checkSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!session) {
+      if (event === "TOKEN_REFRESHED") return;
+
+      try {
+        await applySession(session);
+      } catch (e) {
+        if (process.env.NODE_ENV === "development") {
+          console.warn("[auth] onAuthStateChange", e);
+        }
         setOnboardingUser(null);
         setView("login");
-        return;
-      }
-
-      // Only re-run the full check on sign-in events, not on token refresh etc.
-      if (event === "SIGNED_IN") {
-        const { data: profile } = await supabase
-          .from("users")
-          .select("onboarding_completed")
-          .eq("id", session.user.id)
-          .maybeSingle();
-
-        if (!profile || !profile.onboarding_completed) {
-          setOnboardingUser({ id: session.user.id, email: session.user.email ?? "" });
-          setView("onboarding");
-        } else {
-          setView("dashboard");
-        }
       }
     });
 
     return () => subscription.unsubscribe();
+  }, [applySession]);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      setView((v) => {
+        if (v !== "loading") return v;
+        if (process.env.NODE_ENV === "development") {
+          console.warn("[auth] loading exceeded 20s — showing login (check Supabase URL, network, users table)");
+        }
+        return "login";
+      });
+    }, 20_000);
+    return () => clearTimeout(id);
   }, []);
 
   async function handleLogout() {
