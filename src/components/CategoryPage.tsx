@@ -1,6 +1,7 @@
 "use client";
-import React from "react";
+import React, { useEffect } from "react";
 import { getCategoryById, type HubDetail } from "./hubData";
+import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 
 /* ------------------------------------------------------------------ */
 /*  Arrow icon (reused from DiscoverPage)                              */
@@ -99,7 +100,20 @@ export default function CategoryPage({
     onBack,
     onSelectHub,
 }: CategoryPageProps) {
+    const { userId, sessionId } = useAnalytics();
     const category = getCategoryById(categoryId);
+
+    useEffect(() => {
+        const cat = getCategoryById(categoryId);
+        if (!cat) return;
+        void logContentEvent({
+            userId,
+            sessionId,
+            eventType: "view",
+            uiLocation: "discover",
+            metadata: { screen: "category", category_id: categoryId, category_name: cat.name },
+        });
+    }, [userId, sessionId, categoryId]);
 
     if (!category) {
         return (
@@ -113,7 +127,16 @@ export default function CategoryPage({
         <div className="max-w-4xl mx-auto px-6 py-8">
             {/* Back button */}
             <button
-                onClick={onBack}
+                onClick={() => {
+                    void logContentEvent({
+                        userId,
+                        sessionId,
+                        eventType: "click",
+                        uiLocation: "discover",
+                        metadata: { action: "back_to_discover", from: "category", category_id: categoryId },
+                    });
+                    onBack();
+                }}
                 className="flex items-center gap-1 mb-6 text-sm font-medium transition-all hover:opacity-80"
                 style={{ color: "#a78bfa" }}
             >
@@ -147,7 +170,25 @@ export default function CategoryPage({
             {/* Hub cards grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {category.hubs.map((hub) => (
-                    <HubCard key={hub.id} hub={hub} onClick={() => onSelectHub(hub.id)} />
+                    <HubCard
+                        key={hub.id}
+                        hub={hub}
+                        onClick={() => {
+                            void logContentEvent({
+                                userId,
+                                sessionId,
+                                eventType: "click",
+                                uiLocation: "discover",
+                                metadata: {
+                                    action: "open_hub",
+                                    category_id: categoryId,
+                                    hub_id: hub.id,
+                                    hub_name: hub.name,
+                                },
+                            });
+                            onSelectHub(hub.id);
+                        }}
+                    />
                 ))}
             </div>
         </div>

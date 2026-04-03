@@ -1,5 +1,6 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 
 const NOTIFICATIONS = [
     {
@@ -135,20 +136,55 @@ function NotifIcon({ type }: { type: string }) {
 }
 
 export default function NotificationsPage() {
+    const { userId, sessionId } = useAnalytics();
     const [notifications, setNotifications] = useState(NOTIFICATIONS);
     const [activeTab, setActiveTab] = useState<"all" | "unread">("all");
 
     const unreadCount = notifications.filter(n => n.unread).length;
 
+    useEffect(() => {
+        void logContentEvent({
+            userId,
+            sessionId,
+            eventType: "view",
+            uiLocation: "notifications",
+            metadata: { screen: "notifications" },
+        });
+    }, [userId, sessionId]);
+
     const displayed = activeTab === "unread"
         ? notifications.filter(n => n.unread)
         : notifications;
 
-    const markAllRead = () =>
+    const markAllRead = () => {
+        void logContentEvent({
+            userId,
+            sessionId,
+            eventType: "click",
+            uiLocation: "notifications",
+            metadata: { action: "mark_all_read", count: unreadCount },
+        });
         setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
+    };
 
-    const markRead = (id: number) =>
+    const markRead = (id: number) => {
+        const target = notifications.find(n => n.id === id);
+        if (target) {
+            void logContentEvent({
+                userId,
+                sessionId,
+                eventType: "click",
+                uiLocation: "notifications",
+                metadata: {
+                    action: "notification_row_tap",
+                    notification_id: id,
+                    notif_type: target.type,
+                    was_unread: target.unread,
+                },
+            });
+        }
         setNotifications(prev => prev.map(n => n.id === id ? { ...n, unread: false } : n));
+    };
 
     return (
         <div className="flex-1 overflow-y-auto" style={{ background: "var(--bg)" }}>
@@ -178,7 +214,16 @@ export default function NotificationsPage() {
                 <div className="flex gap-1 mb-5 p-1 rounded-xl"
                     style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}>
                     {(["all", "unread"] as const).map(tab => (
-                        <button key={tab} onClick={() => setActiveTab(tab)}
+                        <button key={tab} onClick={() => {
+                            void logContentEvent({
+                                userId,
+                                sessionId,
+                                eventType: "click",
+                                uiLocation: "notifications",
+                                metadata: { action: "notifications_tab", tab, previous: activeTab },
+                            });
+                            setActiveTab(tab);
+                        }}
                             className="flex-1 py-2 rounded-lg text-sm font-semibold capitalize transition-all"
                             style={{
                                 background: activeTab === tab ? "var(--gradient-btn)" : "transparent",
