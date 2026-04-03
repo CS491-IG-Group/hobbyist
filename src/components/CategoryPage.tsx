@@ -2,6 +2,7 @@
 import React, { useEffect } from "react";
 import { getCategoryById, type HubDetail } from "./hubData";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
+import { useContentImpression } from "../lib/useContentImpression";
 
 /* ------------------------------------------------------------------ */
 /*  Arrow icon (reused from DiscoverPage)                              */
@@ -102,6 +103,13 @@ export default function CategoryPage({
 }: CategoryPageProps) {
     const { userId, sessionId } = useAnalytics();
     const category = getCategoryById(categoryId);
+    const dwellRef = useContentImpression({
+        userId,
+        sessionId,
+        uiLocation: "category",
+        enabled: Boolean(category),
+        metadata: { kind: "category_dwell", category_id: categoryId },
+    });
 
     useEffect(() => {
         const cat = getCategoryById(categoryId);
@@ -110,7 +118,7 @@ export default function CategoryPage({
             userId,
             sessionId,
             eventType: "view",
-            uiLocation: "discover",
+            uiLocation: "category",
             metadata: { screen: "category", category_id: categoryId, category_name: cat.name },
         });
     }, [userId, sessionId, categoryId]);
@@ -124,7 +132,7 @@ export default function CategoryPage({
     }
 
     return (
-        <div className="max-w-4xl mx-auto px-6 py-8">
+        <div ref={dwellRef} className="max-w-4xl mx-auto px-6 py-8">
             {/* Back button */}
             <button
                 onClick={() => {
@@ -132,7 +140,7 @@ export default function CategoryPage({
                         userId,
                         sessionId,
                         eventType: "click",
-                        uiLocation: "discover",
+                        uiLocation: "category",
                         metadata: { action: "back_to_discover", from: "category", category_id: categoryId },
                     });
                     onBack();
@@ -178,7 +186,7 @@ export default function CategoryPage({
                                 userId,
                                 sessionId,
                                 eventType: "click",
-                                uiLocation: "discover",
+                                uiLocation: "category",
                                 metadata: {
                                     action: "open_hub",
                                     category_id: categoryId,

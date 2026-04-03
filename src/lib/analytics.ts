@@ -2,7 +2,19 @@
 
 import { supabase } from "./supabase";
 
-export type ContentEventType = "view" | "click" | "like" | "save" | "hide" | "report";
+export type ContentEventType =
+  | "view"
+  | "click"
+  | "like"
+  | "save"
+  | "unsave"
+  | "hide"
+  | "report"
+  | "join"
+  | "leave"
+  | "follow"
+  | "message"
+  | "create_post";
 
 export type ContentEventMetadata = Record<string, unknown>;
 
@@ -27,6 +39,15 @@ export function inferDeviceType(): string {
   return "desktop";
 }
 
+function sanitizeMetadata(meta: ContentEventMetadata | undefined): Record<string, unknown> | null {
+  if (!meta || Object.keys(meta).length === 0) return null;
+  try {
+    return JSON.parse(JSON.stringify(meta)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 export async function logContentEvent(params: LogContentEventParams) {
   const {
     userId,
@@ -38,25 +59,30 @@ export async function logContentEvent(params: LogContentEventParams) {
     dwellMs,
     uiLocation,
     deviceType,
-    // metadata: reserved for a future DB column; callers may still pass it for local debugging
+    metadata,
   } = params;
 
   if (!userId || !sessionId) {
     return;
   }
 
+  const row: Record<string, unknown> = {
+    user_id: userId,
+    post_id: postId ?? null,
+    item_id: itemId ?? null,
+    hobby_id: hobbyId ?? null,
+    event_type: eventType,
+    dwell_ms: dwellMs ?? null,
+    ui_location: uiLocation ?? null,
+    device_type: deviceType ?? inferDeviceType(),
+    session_id: sessionId,
+  };
+
+  const meta = sanitizeMetadata(metadata);
+  if (meta) row.metadata = meta;
+
   try {
-    const { error } = await supabase.from("content_events").insert({
-      user_id: userId,
-      post_id: postId ?? null,
-      item_id: itemId ?? null,
-      hobby_id: hobbyId ?? null,
-      event_type: eventType,
-      dwell_ms: dwellMs ?? null,
-      ui_location: uiLocation ?? null,
-      device_type: deviceType ?? inferDeviceType(),
-      session_id: sessionId,
-    });
+    const { error } = await supabase.from("content_events").insert(row);
     if (error && process.env.NODE_ENV === "development") {
       console.warn("[analytics] content_events insert:", error.message);
     }

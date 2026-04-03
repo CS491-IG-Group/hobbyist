@@ -132,7 +132,24 @@ function HubPostCard({
                     style={{ color: liked ? "#ec4899" : "var(--text-muted)" }}>
                     <HeartIcon filled={liked} /><span>{likeCount}</span>
                 </button>
-                <button className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-muted)" }}>
+                <button
+                    type="button"
+                    onClick={() => {
+                        void logContentEvent({
+                            userId,
+                            sessionId,
+                            eventType: "click",
+                            uiLocation: "hub_profile",
+                            postId: post.id,
+                            metadata: {
+                                action: "comment_button_tap",
+                                hub: hubName,
+                                client_post_key: `${hubName}:${post.id}`,
+                            },
+                        });
+                    }}
+                    className="flex items-center gap-1.5 text-xs"
+                    style={{ color: "var(--text-muted)" }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
                     <span>{post.comments}</span>
                 </button>
@@ -154,6 +171,13 @@ export default function HubsProfile({ hubName, joined, onToggleJoin, onBack }: H
     const posts = HUB_POSTS[hubName] ?? [];
     const [memberCount, setMemberCount] = useState(info.members);
     const [isJoined, setIsJoined] = useState(joined);
+    const screenDwellRef = useContentImpression({
+        userId,
+        sessionId,
+        uiLocation: "hub_profile",
+        enabled: Boolean(info),
+        metadata: { kind: "hub_profile_screen_dwell", hub: hubName },
+    });
 
     useEffect(() => {
         void logContentEvent({
@@ -172,7 +196,7 @@ export default function HubsProfile({ hubName, joined, onToggleJoin, onBack }: H
         void logContentEvent({
             userId,
             sessionId,
-            eventType: "click",
+            eventType: joining ? "join" : "leave",
             uiLocation: "hub_profile",
             metadata: { action: joining ? "join_hub" : "leave_hub", hub: hubName, source: "hub_profile_header" },
         });
@@ -182,7 +206,7 @@ export default function HubsProfile({ hubName, joined, onToggleJoin, onBack }: H
     const formatCount = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
 
     return (
-        <div className="flex-1 overflow-y-auto" style={{ background: "var(--bg)" }}>
+        <div ref={screenDwellRef} className="flex-1 overflow-y-auto" style={{ background: "var(--bg)" }}>
 
             {/* Banner */}
             <div className="relative h-36" style={{ background: info.banner }}>

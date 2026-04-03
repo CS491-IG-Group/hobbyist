@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
+import { useContentImpression } from "../lib/useContentImpression";
 
 interface Props {
   onBack: () => void;
@@ -81,6 +82,12 @@ export default function AccountSettingsPage({ onBack, displayName, handle, email
   const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [isPrivate, setIsPrivate] = useState(false);
   const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const settingsDwellRef = useContentImpression({
+    userId,
+    sessionId,
+    uiLocation: "account_settings",
+    metadata: { kind: "account_settings_screen_dwell" },
+  });
 
   function handleUpdatePassword() {
     // Visual only — no backend call
@@ -118,7 +125,7 @@ export default function AccountSettingsPage({ onBack, displayName, handle, email
   }, [userId, sessionId]);
 
   return (
-    <div className="flex-1 overflow-y-auto" style={{ background: "var(--bg)" }}>
+    <div ref={settingsDwellRef} className="flex-1 overflow-y-auto" style={{ background: "var(--bg)" }}>
       <div className="max-w-2xl mx-auto px-6 py-8">
 
         {/* Back button + Title */}
@@ -391,7 +398,19 @@ export default function AccountSettingsPage({ onBack, displayName, handle, email
                 </p>
               </div>
             </div>
-            <ToggleSwitch checked={isPrivate} onChange={setIsPrivate} />
+            <ToggleSwitch
+              checked={isPrivate}
+              onChange={v => {
+                void logContentEvent({
+                  userId,
+                  sessionId,
+                  eventType: "click",
+                  uiLocation: "account_settings",
+                  metadata: { action: "privacy_toggle", is_private: v },
+                });
+                setIsPrivate(v);
+              }}
+            />
           </div>
 
           {/* Privacy info cards */}

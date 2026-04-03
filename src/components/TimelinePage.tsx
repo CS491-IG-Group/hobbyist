@@ -1,8 +1,9 @@
 "use client";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import HubPage from "./HubsProfile";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
+import { fetchUserAffinity, rankTimelinePosts, type UserAffinity } from "../lib/recommendations";
 
 const POSTS = [
     {
@@ -144,7 +145,12 @@ function PostCard({ post, heightClass }: PostCardProps) {
         sessionId,
         uiLocation: "timeline",
         postId: post.id,
-        metadata: { kind: "post_impression", hub: post.hub, client_post_id: post.id },
+        metadata: {
+            kind: "post_impression",
+            hub: post.hub,
+            author_handle: post.handle,
+            client_post_id: post.id,
+        },
     });
 
     useEffect(() => {
@@ -174,16 +180,14 @@ function PostCard({ post, heightClass }: PostCardProps) {
         e.stopPropagation();
         const next = !saved;
         setSaved(next);
-        if (next) {
-            await logContentEvent({
-                userId,
-                sessionId,
-                eventType: "save",
-                postId: post.id,
-                uiLocation: "timeline",
-                metadata: { hub: post.hub, client_post_id: post.id },
-            });
-        }
+        await logContentEvent({
+            userId,
+            sessionId,
+            eventType: next ? "save" : "unsave",
+            postId: post.id,
+            uiLocation: "timeline",
+            metadata: { hub: post.hub, client_post_id: post.id },
+        });
     };
 
     const logHideOrReport = async (kind: "hide" | "report") => {
@@ -206,6 +210,21 @@ function PostCard({ post, heightClass }: PostCardProps) {
             ref={impressionRef}
             className="break-inside-avoid mb-4 rounded-2xl overflow-hidden cursor-pointer group relative"
             style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+            onClick={() => {
+                void logContentEvent({
+                    userId,
+                    sessionId,
+                    eventType: "click",
+                    uiLocation: "timeline",
+                    postId: post.id,
+                    metadata: {
+                        action: "post_card_tap",
+                        hub: post.hub,
+                        author_handle: post.handle,
+                        client_post_id: post.id,
+                    },
+                });
+            }}
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}>
 
@@ -329,10 +348,29 @@ function PostCard({ post, heightClass }: PostCardProps) {
                             <HeartIcon filled={liked} />
                             {likeCount}
                         </span>
-                        <span className="flex items-center gap-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
+                        <button
+                            type="button"
+                            onClick={e => {
+                                e.stopPropagation();
+                                void logContentEvent({
+                                    userId,
+                                    sessionId,
+                                    eventType: "click",
+                                    uiLocation: "timeline",
+                                    postId: post.id,
+                                    metadata: {
+                                        action: "comment_button_tap",
+                                        hub: post.hub,
+                                        author_handle: post.handle,
+                                        client_post_id: post.id,
+                                    },
+                                });
+                            }}
+                            className="flex items-center gap-1 text-[10px]"
+                            style={{ color: "var(--text-muted)" }}>
                             <CommentIcon />
                             {post.comments}
-                        </span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -352,13 +390,33 @@ function CreatePostModal({ onClose, onPost }: {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
             style={{ background: "rgba(0,0,0,0.7)" }}
-            onClick={onClose}>
+            onClick={() => {
+                void logContentEvent({
+                    userId,
+                    sessionId,
+                    eventType: "click",
+                    uiLocation: "timeline",
+                    metadata: { action: "compose_overlay_dismiss", had_text: text.trim().length > 0 },
+                });
+                onClose();
+            }}>
             <div className="w-full max-w-lg rounded-2xl overflow-hidden"
                 onClick={e => e.stopPropagation()}
                 style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
                 <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
                     <h2 className="text-base font-bold" style={{ fontFamily: "Syne, sans-serif" }}>Create Post</h2>
-                    <button onClick={onClose} style={{ color: "var(--text-muted)" }}>
+                    <button
+                        onClick={() => {
+                            void logContentEvent({
+                                userId,
+                                sessionId,
+                                eventType: "click",
+                                uiLocation: "timeline",
+                                metadata: { action: "compose_dismiss", had_text: text.trim().length > 0 },
+                            });
+                            onClose();
+                        }}
+                        style={{ color: "var(--text-muted)" }}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                         </svg>
@@ -428,7 +486,7 @@ function CreatePostModal({ onClose, onPost }: {
                                     void logContentEvent({
                                         userId,
                                         sessionId,
-                                        eventType: "click",
+                                        eventType: "create_post",
                                         uiLocation: "timeline",
                                         metadata: {
                                             action: "compose_submit",
@@ -459,10 +517,18 @@ interface TimelinePageProps {
 
 export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageProps) {
     const { userId, sessionId } = useAnalytics();
+    const timelineDwellRef = useContentImpression({
+        userId,
+        sessionId,
+        uiLocation: "timeline",
+        metadata: { kind: "timeline_feed_screen_dwell" },
+    });
     const [activeFilter, setActiveFilter] = useState("All");
     const [showCompose, setShowCompose] = useState(false);
     const [activeHub, setActiveHub] = useState<string | null>(null);
     const [posts, setPosts] = useState(POSTS);
+    const [affinity, setAffinity] = useState<UserAffinity | null>(null);
+    const [affinityReady, setAffinityReady] = useState(false);
 
     const handleNewPost = (text: string, hub: string) => {
         const newPost = {
@@ -485,8 +551,44 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
 
     const filtered = activeFilter === "All" ? posts : posts.filter(p => p.hub === activeFilter);
 
+    const feedPosts = useMemo(() => {
+        if (!affinityReady) return filtered;
+        return rankTimelinePosts(filtered, affinity, joinedHubs);
+    }, [filtered, affinity, affinityReady, joinedHubs]);
+
     useEffect(() => {
-        logContentEvent({ userId, sessionId, eventType: "view", uiLocation: "timeline" });
+        if (!userId) {
+            setAffinity(null);
+            setAffinityReady(false);
+            return;
+        }
+        let cancelled = false;
+        setAffinityReady(false);
+        void (async () => {
+            const res = await fetchUserAffinity(userId);
+            if (!cancelled) {
+                if (res.ok) {
+                    setAffinity(res.affinity);
+                    setAffinityReady(true);
+                } else {
+                    setAffinity(null);
+                    setAffinityReady(false);
+                }
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [userId]);
+
+    useEffect(() => {
+        logContentEvent({
+            userId,
+            sessionId,
+            eventType: "view",
+            uiLocation: "timeline",
+            metadata: { screen: "timeline_feed" },
+        });
     }, [userId, sessionId]);
 
     if (activeHub) {
@@ -502,14 +604,28 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
 
     return (
         <div className="flex flex-1 min-h-screen" style={{ background: "var(--bg)" }}>
-            <div className="flex-1 overflow-y-auto">
+            <div ref={timelineDwellRef} className="flex-1 overflow-y-auto">
                 <div className="px-6 py-6">
 
                     {/* Header */}
                     <div className="flex items-center justify-between mb-5">
-                        <h1 className="text-xl font-bold" style={{ fontFamily: "Syne, sans-serif" }}>Timeline</h1>
+                        <div className="flex items-center gap-2 min-w-0">
+                            <h1 className="text-xl font-bold shrink-0" style={{ fontFamily: "Syne, sans-serif" }}>Timeline</h1>
+                            {affinityReady && activeFilter === "All" && (
+                                <span
+                                    className="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0"
+                                    style={{
+                                        background: "rgba(139,92,246,0.15)",
+                                        color: "#a78bfa",
+                                        border: "1px solid rgba(139,92,246,0.25)",
+                                    }}
+                                    title="Order is based on your hubs, likes, saves, and views">
+                                    For you
+                                </span>
+                            )}
+                        </div>
                         <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: "var(--surface2)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
-                            {filtered.length} posts
+                            {feedPosts.length} posts
                         </span>
                     </div>
 
@@ -539,7 +655,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
 
                     {/* Masonry grid — 2 columns on md+, 1 on mobile */}
                     <div className="columns-1 md:columns-2 gap-4">
-                        {filtered.map((post, i) => (
+                        {feedPosts.map((post, i) => (
                             <PostCard
                                 key={post.id}
                                 post={post}
@@ -620,7 +736,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                                                     void logContentEvent({
                                                         userId,
                                                         sessionId,
-                                                        eventType: "click",
+                                                        eventType: isJoined ? "leave" : "join",
                                                         uiLocation: "timeline",
                                                         metadata: {
                                                             action: isJoined ? "leave_hub" : "join_hub",
@@ -687,7 +803,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                                         onClick={() => void logContentEvent({
                                             userId,
                                             sessionId,
-                                            eventType: "click",
+                                            eventType: "follow",
                                             uiLocation: "timeline",
                                             metadata: {
                                                 action: "follow_suggestion",

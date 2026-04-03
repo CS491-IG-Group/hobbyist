@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { getHubById, getCategoryById, type HubItem } from "./hubData";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
+import { useContentImpression } from "../lib/useContentImpression";
 
 /* ------------------------------------------------------------------ */
 /*  Icons                                                              */
@@ -83,6 +84,18 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
 
     const category = getCategoryById(categoryId);
     const hub = getHubById(categoryId, hubId);
+    const dwellRef = useContentImpression({
+        userId,
+        sessionId,
+        uiLocation: "hub",
+        enabled: Boolean(hub && category),
+        metadata: {
+            kind: "hub_dwell",
+            category_id: categoryId,
+            hub_id: hubId,
+            hub_name: hub?.name,
+        },
+    });
 
     useEffect(() => {
         const cat = getCategoryById(categoryId);
@@ -92,7 +105,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
             userId,
             sessionId,
             eventType: "view",
-            uiLocation: "discover",
+            uiLocation: "hub",
             metadata: {
                 screen: "hub",
                 category_id: categoryId,
@@ -111,7 +124,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
     }
 
     return (
-        <div className="max-w-5xl mx-auto px-6 py-8">
+        <div ref={dwellRef} className="max-w-5xl mx-auto px-6 py-8">
             {/* Back button */}
             <button
                 onClick={() => {
@@ -119,7 +132,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                         userId,
                         sessionId,
                         eventType: "click",
-                        uiLocation: "discover",
+                        uiLocation: "hub",
                         metadata: {
                             action: "back_to_category",
                             category_id: categoryId,
@@ -179,10 +192,10 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                         onClick={() => void logContentEvent({
                             userId,
                             sessionId,
-                            eventType: "click",
-                            uiLocation: "discover",
+                            eventType: "join",
+                            uiLocation: "hub",
                             metadata: {
-                                action: "discover_hub_join_click",
+                                action: "hub_join_intent",
                                 category_id: categoryId,
                                 hub_id: hubId,
                                 hub_name: hub.name,
@@ -224,7 +237,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                                         userId,
                                         sessionId,
                                         eventType: "click",
-                                        uiLocation: "discover",
+                                        uiLocation: "hub",
                                         metadata: {
                                             action: "hub_posts_tab",
                                             tab: "recent",
@@ -248,7 +261,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                                         userId,
                                         sessionId,
                                         eventType: "click",
-                                        uiLocation: "discover",
+                                        uiLocation: "hub",
                                         metadata: {
                                             action: "hub_posts_tab",
                                             tab: "popular",
@@ -294,7 +307,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                                         userId,
                                         sessionId,
                                         eventType: "click",
-                                        uiLocation: "discover",
+                                        uiLocation: "hub",
                                         metadata: {
                                             action: "open_item",
                                             category_id: categoryId,

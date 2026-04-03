@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
+import { useContentImpression } from "../lib/useContentImpression";
 
 const NOTIFICATIONS = [
     {
@@ -141,6 +142,12 @@ export default function NotificationsPage() {
     const [activeTab, setActiveTab] = useState<"all" | "unread">("all");
 
     const unreadCount = notifications.filter(n => n.unread).length;
+    const notificationsDwellRef = useContentImpression({
+        userId,
+        sessionId,
+        uiLocation: "notifications",
+        metadata: { kind: "notifications_screen_dwell" },
+    });
 
     useEffect(() => {
         void logContentEvent({
@@ -187,7 +194,7 @@ export default function NotificationsPage() {
     };
 
     return (
-        <div className="flex-1 overflow-y-auto" style={{ background: "var(--bg)" }}>
+        <div ref={notificationsDwellRef} className="flex-1 overflow-y-auto" style={{ background: "var(--bg)" }}>
             <div className="px-6 py-6">
 
                 {/* Header */}

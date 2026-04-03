@@ -154,8 +154,7 @@ export default function ItemDetailPage({
     const impressionRef = useContentImpression({
         userId,
         sessionId,
-        uiLocation: "discover",
-        itemId: itemIndex,
+        uiLocation: "item_detail",
         enabled: Boolean(hub && item),
         metadata: {
             kind: "item_detail_dwell",
@@ -174,12 +173,12 @@ export default function ItemDetailPage({
             userId,
             sessionId,
             eventType: "view",
-            uiLocation: "discover",
-            itemId: itemIndex,
+            uiLocation: "item_detail",
             metadata: {
                 screen: "item_detail",
                 category_id: categoryId,
                 hub_id: hubId,
+                item_index: itemIndex,
                 item_name: it.name,
             },
         });
@@ -203,12 +202,12 @@ export default function ItemDetailPage({
             userId,
             sessionId,
             eventType: "click",
-            uiLocation: "discover",
-            itemId: itemIndex,
+            uiLocation: "item_detail",
             metadata: {
                 action: "submit_review",
                 category_id: categoryId,
                 hub_id: hubId,
+                item_index: itemIndex,
                 item_name: item.name,
                 rating: userRating,
                 review_char_len: reviewText.trim().length,
@@ -235,12 +234,12 @@ export default function ItemDetailPage({
                         userId,
                         sessionId,
                         eventType: "click",
-                        uiLocation: "discover",
-                        itemId: itemIndex,
+                        uiLocation: "item_detail",
                         metadata: {
                             action: "back_to_hub",
                             category_id: categoryId,
                             hub_id: hubId,
+                            item_index: itemIndex,
                             item_name: item.name,
                         },
                     });

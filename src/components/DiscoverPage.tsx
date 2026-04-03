@@ -2,6 +2,7 @@
 import React, { useEffect } from "react";
 import categories from "./hubData";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
+import { useContentImpression } from "../lib/useContentImpression";
 
 interface Hub {
   id: string;
@@ -78,6 +79,12 @@ interface DiscoverPageProps {
 
 export default function DiscoverPage({ onSelectCategory }: DiscoverPageProps) {
   const { userId, sessionId } = useAnalytics();
+  const dwellRef = useContentImpression({
+    userId,
+    sessionId,
+    uiLocation: "discover",
+    metadata: { kind: "discover_root_dwell" },
+  });
 
   useEffect(() => {
     void logContentEvent({
@@ -90,7 +97,7 @@ export default function DiscoverPage({ onSelectCategory }: DiscoverPageProps) {
   }, [userId, sessionId]);
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8">
+    <div ref={dwellRef} className="max-w-4xl mx-auto px-6 py-8">
       <h1
         className="text-2xl font-bold mb-6"
         style={{ fontFamily: "Syne, sans-serif", color: "var(--text)" }}
