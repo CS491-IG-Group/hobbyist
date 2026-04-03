@@ -100,9 +100,14 @@ const FILTERS = ["All", "Cars", "Fitness", "Technology", "Movies", "Photography"
 
 const HUBS_LIST = ["Cars", "Fitness", "Technology", "Movies", "Photography", "Cooking", "Gaming"];
 
+const HUB_COLORS: Record<string, string> = {
+    Cars: "#3b82f6", Fitness: "#10b981", Technology: "#f59e0b",
+    Movies: "#ec4899", Photography: "#6366f1", Cooking: "#ef4444", Gaming: "#8b5cf6",
+};
+
 function HeartIcon({ filled }: { filled: boolean }) {
     return (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
             <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
         </svg>
     );
@@ -110,121 +115,134 @@ function HeartIcon({ filled }: { filled: boolean }) {
 
 function CommentIcon() {
     return (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
     );
 }
 
-function RepostIcon() {
-    return (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="17 1 21 5 17 9" />
-            <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-            <polyline points="7 23 3 19 7 15" />
-            <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-        </svg>
-    );
-}
+// Assign a random-ish height class per post so masonry looks varied
+const HEIGHT_CLASSES = ["h-48", "h-56", "h-64", "h-72", "h-52", "h-60"];
 
 interface PostCardProps {
     post: typeof POSTS[0];
     userId: string | null;
     sessionId: string;
+    heightClass: string;
 }
 
-function PostCard({ post, userId, sessionId }: PostCardProps) {
+function PostCard({ post, userId, sessionId, heightClass }: PostCardProps) {
     const [liked, setLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(post.likes);
+    const [hovered, setHovered] = useState(false);
 
-    const handleLike = async () => {
+    const handleLike = async (e: React.MouseEvent) => {
+        e.stopPropagation();
         setLiked(!liked);
         setLikeCount(liked ? likeCount - 1 : likeCount + 1);
-
         await logContentEvent({
-            userId,
-            sessionId,
-            eventType: "like",
-            postId: post.id,
-            uiLocation: "timeline",
+            userId, sessionId, eventType: "like", postId: post.id, uiLocation: "timeline",
         });
     };
 
-    return (
-        <div className="rounded-2xl p-5 transition-all hover:border-purple-500/30"
-            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+    // Text-only posts get a colored gradient background
+    const isTextOnly = !post.image;
 
-            {/* Header */}
-            <div className="flex items-start justify-between gap-3 mb-3">
-                <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-lg shrink-0"
-                        style={{ background: post.avatarBg }}>
-                        {post.avatar}
+    return (
+        <div
+            className="break-inside-avoid mb-4 rounded-2xl overflow-hidden cursor-pointer group"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}>
+
+            {/* Image or colored block */}
+            <div className={`relative ${isTextOnly ? "h-36" : heightClass} overflow-hidden`}>
+                {post.image ? (
+                    <img
+                        src={post.image}
+                        alt=""
+                        className="w-full h-full object-cover transition-transform duration-500"
+                        style={{ transform: hovered ? "scale(1.05)" : "scale(1)" }}
+                    />
+                ) : (
+                    <div className="w-full h-full flex items-center justify-center p-5"
+                        style={{ background: `linear-gradient(135deg, ${post.hubColor}30, ${post.hubColor}10)` }}>
+                        <p className="text-sm font-medium text-center leading-relaxed"
+                            style={{ color: "var(--text)", fontFamily: "Syne, sans-serif" }}>
+                            {post.text}
+                        </p>
                     </div>
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold">{post.user}</span>
-                            <span className="text-xs" style={{ color: "var(--text-muted)" }}>{post.handle}</span>
-                        </div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                                style={{
-                                    background: `${post.hubColor}20`,
-                                    color: post.hubColor,
-                                    border: `1px solid ${post.hubColor}40`
-                                }}>
-                                {post.hub}
-                            </span>
-                            <span className="text-xs" style={{ color: "var(--text-muted)" }}>{post.time}</span>
-                        </div>
-                    </div>
+                )}
+
+                {/* Hub pill — top left */}
+                <div className="absolute top-2.5 left-2.5">
+                    <span className="text-[10px] font-bold px-2 py-1 rounded-full backdrop-blur-md"
+                        style={{
+                            background: `${post.hubColor}cc`,
+                            color: "#fff",
+                            boxShadow: `0 2px 8px ${post.hubColor}60`,
+                        }}>
+                        {post.hub}
+                    </span>
                 </div>
-                <button style={{ color: "var(--text-muted)" }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                        <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
-                    </svg>
+
+                {/* Like button — top right, appears on hover */}
+                <button
+                    onClick={handleLike}
+                    className="absolute top-2.5 right-2.5 w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md transition-all"
+                    style={{
+                        background: liked ? "#ec489980" : "rgba(0,0,0,0.45)",
+                        color: liked ? "#fff" : "rgba(255,255,255,0.8)",
+                        opacity: hovered ? 1 : 0,
+                        transform: hovered ? "scale(1)" : "scale(0.8)",
+                        transition: "opacity 0.2s, transform 0.2s",
+                    }}>
+                    <HeartIcon filled={liked} />
                 </button>
             </div>
 
-            {/* Content */}
-            <p className="text-sm leading-relaxed mb-4" style={{ color: "var(--text-dim)" }}>
-                {post.text}
-            </p>
+            {/* Caption + user info below image */}
+            <div className="px-3 pt-3 pb-3">
+                {/* Show caption only for image posts (text-only already shows it in the card) */}
+                {post.image && (
+                    <p className="text-xs leading-relaxed mb-2.5 line-clamp-2"
+                        style={{ color: "var(--text-dim)" }}>
+                        {post.text}
+                    </p>
+                )}
 
-            {/* Image */}
-            {post.image && (
-                <div className="rounded-xl overflow-hidden mb-4" style={{ maxHeight: "320px" }}>
-                    <img src={post.image} alt="post" className="w-full object-cover" style={{ maxHeight: "320px" }} />
+                {/* User row */}
+                <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-6 h-6 rounded-lg flex items-center justify-center text-xs shrink-0"
+                            style={{ background: post.avatarBg }}>
+                            {post.avatar}
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-xs font-semibold truncate" style={{ color: "var(--text)" }}>{post.user}</p>
+                            <p className="text-[10px] truncate" style={{ color: "var(--text-muted)" }}>{post.time}</p>
+                        </div>
+                    </div>
+
+                    {/* Stats */}
+                    <div className="flex items-center gap-2.5 shrink-0">
+                        <span className="flex items-center gap-1 text-[10px]"
+                            style={{ color: liked ? "#ec4899" : "var(--text-muted)" }}>
+                            <HeartIcon filled={liked} />
+                            {likeCount}
+                        </span>
+                        <span className="flex items-center gap-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
+                            <CommentIcon />
+                            {post.comments}
+                        </span>
+                    </div>
                 </div>
-            )}
-
-            {/* Divider */}
-            <div className="h-px mb-3" style={{ background: "var(--border)" }} />
-
-            {/* Actions */}
-            <div className="flex items-center gap-5">
-                <button onClick={handleLike}
-                    className="flex items-center gap-1.5 text-xs transition-all hover:scale-105"
-                    style={{ color: liked ? "#ec4899" : "var(--text-muted)" }}>
-                    <HeartIcon filled={liked} />
-                    <span>{likeCount}</span>
-                </button>
-                <button className="flex items-center gap-1.5 text-xs transition-all hover:scale-105"
-                    style={{ color: "var(--text-muted)" }}>
-                    <CommentIcon />
-                    <span>{post.comments}</span>
-                </button>
-                <button className="flex items-center gap-1.5 text-xs transition-all hover:scale-105"
-                    style={{ color: "var(--text-muted)" }}>
-                    <RepostIcon />
-                    <span>{post.reposts}</span>
-                </button>
             </div>
         </div>
     );
 }
 
-function CreatePostModal({ onClose }: { onClose: () => void }) {
+function CreatePostModal({ onClose, onPost }: { onClose: () => void; onPost: (text: string, hub: string) => void }) {
     const [text, setText] = React.useState("");
     const [selectedHub, setSelectedHub] = React.useState("");
     const maxChars = 280;
@@ -236,10 +254,7 @@ function CreatePostModal({ onClose }: { onClose: () => void }) {
             <div className="w-full max-w-lg rounded-2xl overflow-hidden"
                 onClick={e => e.stopPropagation()}
                 style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-
-                {/* Header */}
-                <div className="flex items-center justify-between px-5 py-4"
-                    style={{ borderBottom: "1px solid var(--border)" }}>
+                <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
                     <h2 className="text-base font-bold" style={{ fontFamily: "Syne, sans-serif" }}>Create Post</h2>
                     <button onClick={onClose} style={{ color: "var(--text-muted)" }}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -247,20 +262,15 @@ function CreatePostModal({ onClose }: { onClose: () => void }) {
                         </svg>
                     </button>
                 </div>
-
-                {/* Body */}
                 <div className="p-5">
                     <div className="flex items-center gap-3 mb-4">
                         <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0"
-                            style={{ background: "linear-gradient(135deg, #1e1b4b, #4c1d95)" }}>
-                            ✨
-                        </div>
+                            style={{ background: "linear-gradient(135deg, #1e1b4b, #4c1d95)" }}>✨</div>
                         <div>
                             <p className="text-sm font-semibold">You</p>
                             <p className="text-xs" style={{ color: "var(--text-muted)" }}>Posting to orbit.r</p>
                         </div>
                     </div>
-
                     <textarea
                         placeholder="What's on your mind? Share with your hubs..."
                         value={text}
@@ -269,13 +279,11 @@ function CreatePostModal({ onClose }: { onClose: () => void }) {
                         className="w-full bg-transparent outline-none text-sm resize-none leading-relaxed"
                         style={{ color: "var(--text)", caretColor: "#a78bfa" }}
                     />
-
                     <div className="flex justify-end mb-4">
                         <span className="text-xs" style={{ color: text.length > maxChars * 0.8 ? "#f59e0b" : "var(--text-muted)" }}>
                             {text.length}/{maxChars}
                         </span>
                     </div>
-
                     <div className="mb-5">
                         <p className="text-xs font-semibold mb-2" style={{ color: "var(--text-muted)" }}>Post to hub</p>
                         <div className="flex flex-wrap gap-2">
@@ -293,9 +301,7 @@ function CreatePostModal({ onClose }: { onClose: () => void }) {
                             ))}
                         </div>
                     </div>
-
                     <div className="h-px mb-4" style={{ background: "var(--border)" }} />
-
                     <div className="flex items-center justify-between">
                         <div className="flex gap-3">
                             <button style={{ color: "var(--text-muted)" }} title="Add image">
@@ -315,7 +321,7 @@ function CreatePostModal({ onClose }: { onClose: () => void }) {
                             </button>
                         </div>
                         <button
-                            onClick={onClose}
+                            onClick={() => { if (text.trim() && selectedHub) { onPost(text.trim(), selectedHub); onClose(); } }}
                             disabled={!text.trim() || !selectedHub}
                             className="px-5 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{ background: "var(--gradient-btn)" }}>
@@ -339,18 +345,31 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
     const [activeFilter, setActiveFilter] = useState("All");
     const [showCompose, setShowCompose] = useState(false);
     const [activeHub, setActiveHub] = useState<string | null>(null);
+    const [posts, setPosts] = useState(POSTS);
 
-    const filtered = activeFilter === "All"
-        ? POSTS
-        : POSTS.filter(p => p.hub === activeFilter);
+    const handleNewPost = (text: string, hub: string) => {
+        const newPost = {
+            id: Date.now(),
+            user: "You",
+            handle: "@you",
+            avatar: "✨",
+            avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
+            hub,
+            hubColor: HUB_COLORS[hub] || "#8b5cf6",
+            time: "Just now",
+            text,
+            image: null,
+            likes: 0,
+            comments: 0,
+            reposts: 0,
+        };
+        setPosts(prev => [newPost, ...prev]);
+    };
+
+    const filtered = activeFilter === "All" ? posts : posts.filter(p => p.hub === activeFilter);
 
     useEffect(() => {
-        logContentEvent({
-            userId,
-            sessionId,
-            eventType: "view",
-            uiLocation: "timeline",
-        });
+        logContentEvent({ userId, sessionId, eventType: "view", uiLocation: "timeline" });
     }, [userId, sessionId]);
 
     if (activeHub) {
@@ -363,17 +382,22 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
             />
         );
     }
+
     return (
         <div className="flex flex-1 min-h-screen" style={{ background: "var(--bg)" }}>
-
-            {/* Feed */}
             <div className="flex-1 overflow-y-auto">
                 <div className="px-6 py-6">
 
-                    <h1 className="text-xl font-bold mb-5" style={{ fontFamily: "Syne, sans-serif" }}>Timeline</h1>
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-5">
+                        <h1 className="text-xl font-bold" style={{ fontFamily: "Syne, sans-serif" }}>Timeline</h1>
+                        <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: "var(--surface2)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
+                            {filtered.length} posts
+                        </span>
+                    </div>
 
                     {/* Filter pills */}
-                    <div className="flex gap-2 overflow-x-auto pb-3 mb-5 scrollbar-hide">
+                    <div className="flex gap-2 overflow-x-auto pb-3 mb-6 scrollbar-hide">
                         {FILTERS.map(f => (
                             <button key={f} onClick={() => setActiveFilter(f)}
                                 className="px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all"
@@ -387,10 +411,16 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
                         ))}
                     </div>
 
-                    {/* Posts */}
-                    <div className="space-y-3">
-                        {filtered.map(post => (
-                            <PostCard key={post.id} post={post} userId={userId} sessionId={sessionId} />
+                    {/* Masonry grid — 2 columns on md+, 1 on mobile */}
+                    <div className="columns-1 md:columns-2 gap-4">
+                        {filtered.map((post, i) => (
+                            <PostCard
+                                key={post.id}
+                                post={post}
+                                userId={userId}
+                                sessionId={sessionId}
+                                heightClass={HEIGHT_CLASSES[i % HEIGHT_CLASSES.length]}
+                            />
                         ))}
                     </div>
                 </div>
@@ -400,7 +430,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
                     onClick={() => setShowCompose(true)}
                     className="fixed bottom-8 z-40 w-14 h-14 rounded-full flex items-center justify-center text-white transition-all hover:scale-110 active:scale-95"
                     style={{
-                        right: "calc(256px + 48px)",
+                        right: "calc(320px + 2rem)",
                         background: "var(--gradient-btn)",
                         boxShadow: "0 4px 24px rgba(139,92,246,0.4)",
                     }}>
@@ -411,78 +441,103 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
                 </button>
             </div>
 
-            {/* Create post modal */}
-            {showCompose && <CreatePostModal onClose={() => setShowCompose(false)} />}
+            {/* Right sidebar — Trending Hubs & People You May Know */}
+            <aside className="hidden lg:block w-80 shrink-0 p-5" style={{ borderLeft: "1px solid var(--border)" }}>
 
-            {/* Right sidebar */}
-            <aside className="hidden lg:block w-64 shrink-0 sticky top-0 h-screen overflow-y-auto p-4"
-                style={{ borderLeft: "1px solid var(--border)" }}>
-
-                {/* Trending hubs */}
-                <h3 className="text-sm font-bold mb-3" style={{ fontFamily: "Syne, sans-serif" }}>Trending Hubs</h3>
-                <div className="space-y-2 mb-6">
-                    {[
-                        { name: "Cars", members: "18.2k", color: "#3b82f6", emoji: "🚗" },
-                        { name: "Fitness", members: "24.5k", color: "#10b981", emoji: "💪" },
-                        { name: "Technology", members: "31.1k", color: "#f59e0b", emoji: "💻" },
-                        { name: "Movies", members: "15.8k", color: "#ec4899", emoji: "🎬" },
-                        { name: "Photography", members: "9.3k", color: "#6366f1", emoji: "📸" },
-                    ].map(hub => {
-                        const isJoined = joinedHubs.includes(hub.name);
-                        return (
-                            <div key={hub.name} className="flex items-center gap-2">
-                                {/* Hub name — opens hub page */}
-                                <button
-                                    onClick={() => setActiveHub(hub.name)}
-                                    className="flex items-center gap-3 flex-1 px-3 py-2.5 rounded-xl transition-all hover:opacity-80"
-                                    style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}>
-                                    <span className="text-base">{hub.emoji}</span>
-                                    <div className="flex-1 text-left">
-                                        <p className="text-xs font-semibold">{hub.name}</p>
-                                        <p className="text-xs" style={{ color: "var(--text-muted)" }}>{hub.members} members</p>
+                {/* Trending Hubs */}
+                <div className="mb-6">
+                    <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-sm font-bold" style={{ fontFamily: "Syne, sans-serif" }}>🔥 Trending Hubs</h2>
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full"
+                            style={{ background: "rgba(139,92,246,0.12)", color: "#a78bfa" }}>Explore all</span>
+                    </div>
+                    <div className="space-y-2">
+                        {[
+                            { name: "Cars", members: "18.2k", color: "#3b82f6", emoji: "🚗", trend: "+12%", bg: "linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%)" },
+                            { name: "Fitness", members: "24.5k", color: "#10b981", emoji: "💪", trend: "+8%", bg: "linear-gradient(135deg, #064e3b 0%, #059669 100%)" },
+                            { name: "Technology", members: "31.1k", color: "#f59e0b", emoji: "💻", trend: "+21%", bg: "linear-gradient(135deg, #78350f 0%, #d97706 100%)" },
+                        ].map(hub => {
+                            const isJoined = joinedHubs.includes(hub.name);
+                            return (
+                                <div key={hub.name}
+                                    className="rounded-xl p-3 transition-all hover:scale-[1.02] h-14 flex items-center cursor-pointer"
+                                    style={{ background: hub.bg, border: "1px solid rgba(255,255,255,0.1)", boxShadow: `0 4px 16px ${hub.color}20` }}
+                                    onClick={() => setActiveHub(hub.name)}>
+                                    <div className="flex items-center gap-3 w-full">
+                                        <span className="text-2xl">{hub.emoji}</span>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-bold text-white">{hub.name}</p>
+                                            <p className="text-[11px] text-white/50">{hub.members} members</p>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                                                style={{ background: "rgba(255,255,255,0.15)", color: "#4ade80" }}>↑ {hub.trend}</span>
+                                            <button
+                                                onClick={e => { e.stopPropagation(); onToggleJoin(hub.name); }}
+                                                className="text-[10px] px-2 py-1 rounded-lg font-semibold transition-all hover:opacity-80"
+                                                style={isJoined
+                                                    ? { background: "rgba(255,255,255,0.2)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)" }
+                                                    : { background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.15)" }}>
+                                                {isJoined ? "Joined ✓" : "Join +"}
+                                            </button>
+                                        </div>
                                     </div>
-                                </button>
-                                {/* Join / Leave toggle */}
-                                <button
-                                    onClick={() => onToggleJoin(hub.name)}
-                                    className="text-xs px-2.5 py-1.5 rounded-lg font-semibold shrink-0 transition-all hover:opacity-80"
-                                    style={isJoined
-                                        ? { background: `${hub.color}20`, color: hub.color, border: `1px solid ${hub.color}40` }
-                                        : { background: "var(--surface2)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
-                                    {isJoined ? "✓" : "+"}
-                                </button>
-                            </div>
-                        );
-                    })}
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
 
-                {/* Suggested friends */}
-                <h3 className="text-sm font-bold mb-3" style={{ fontFamily: "Syne, sans-serif" }}>Suggested Friends</h3>
-                <div className="space-y-2">
-                    {[
-                        { name: "Jordan Lee", handle: "@jordanlee", avatar: "💪", bg: "linear-gradient(135deg, #064e3b, #065f46)" },
-                        { name: "Sam Chen", handle: "@samchen", avatar: "💻", bg: "linear-gradient(135deg, #1c1917, #44403c)" },
-                        { name: "Maya Patel", handle: "@mayapatel", avatar: "🎬", bg: "linear-gradient(135deg, #831843, #9d174d)" },
-                    ].map(friend => (
-                        <div key={friend.handle}
-                            className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
-                            style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}>
-                            <div className="w-8 h-8 rounded-xl flex items-center justify-center text-sm shrink-0"
-                                style={{ background: friend.bg }}>
-                                {friend.avatar}
+                <div className="h-px mb-5" style={{ background: "var(--border)" }} />
+
+                {/* People You May Know */}
+                <div>
+                    <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-sm font-bold" style={{ fontFamily: "Syne, sans-serif" }}>👋 People You May Know</h2>
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full"
+                            style={{ background: "rgba(139,92,246,0.12)", color: "#a78bfa" }}>See all</span>
+                    </div>
+                    <div className="space-y-2">
+                        {[
+                            { name: "Jordan Lee", handle: "@jordanlee", avatar: "💪", bg: "linear-gradient(135deg, #064e3b, #065f46)", mutualHubs: ["Fitness", "Cooking"], accent: "#10b981" },
+                            { name: "Sam Chen", handle: "@samchen", avatar: "💻", bg: "linear-gradient(135deg, #1c1917, #44403c)", mutualHubs: ["Technology", "Gaming"], accent: "#f59e0b" },
+                            { name: "Maya Patel", handle: "@mayapatel", avatar: "🎬", bg: "linear-gradient(135deg, #831843, #9d174d)", mutualHubs: ["Movies"], accent: "#ec4899" },
+                        ].map(friend => (
+                            <div key={friend.handle}
+                                className="rounded-xl p-3 transition-all hover:scale-[1.01]"
+                                style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0"
+                                        style={{ background: friend.bg }}>
+                                        {friend.avatar}
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-xs font-semibold truncate">{friend.name}</p>
+                                        <p className="text-[11px] truncate" style={{ color: "var(--text-muted)" }}>{friend.handle}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex flex-wrap gap-1">
+                                        {friend.mutualHubs.map(hub => (
+                                            <span key={hub} className="text-[9px] px-1.5 py-0.5 rounded-full font-medium"
+                                                style={{ background: `${friend.accent}15`, color: friend.accent, border: `1px solid ${friend.accent}25` }}>
+                                                {hub}
+                                            </span>
+                                        ))}
+                                        <span className="text-[9px] px-1 py-0.5" style={{ color: "var(--text-muted)" }}>mutual</span>
+                                    </div>
+                                    <button className="text-[10px] px-2.5 py-1 rounded-lg font-semibold shrink-0 transition-all hover:opacity-90"
+                                        style={{ background: "rgba(139,92,246,0.15)", color: "#a78bfa", border: "1px solid rgba(139,92,246,0.2)" }}>
+                                        Follow
+                                    </button>
+                                </div>
                             </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="text-xs font-semibold truncate">{friend.name}</p>
-                                <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>{friend.handle}</p>
-                            </div>
-                            <button className="text-xs px-2.5 py-1 rounded-lg font-semibold shrink-0"
-                                style={{ background: "rgba(139,92,246,0.15)", color: "#a78bfa", border: "1px solid rgba(139,92,246,0.3)" }}>
-                                Follow
-                            </button>
-                        </div>
-                    ))}
+                        ))}
+                    </div>
                 </div>
             </aside>
+
+            {showCompose && <CreatePostModal onClose={() => setShowCompose(false)} onPost={handleNewPost} />}
         </div>
     );
 }

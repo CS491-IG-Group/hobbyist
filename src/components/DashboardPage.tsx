@@ -8,6 +8,7 @@ import ItemDetailPage from "./ItemDetailPage";
 import TimelinePage from "./TimelinePage";
 import NicheFeed from "./NicheFeed";
 import ProfilePage from "./ProfilePage";
+import AccountSettingsPage from "./AccountSettingsPage";
 import NotificationsPage from "./NotificationsPage";
 import { supabase } from "../lib/supabase";
 
@@ -164,6 +165,7 @@ export default function DashboardPage({ onLogout }: Props) {
   const [activeNav, setActiveNav] = useState("timeline");
   const [subPage, setSubPage] = useState<SubPage>(null);
   const [unreadCount, setUnreadCount] = useState(3);
+  const [showAccountSettings, setShowAccountSettings] = useState(false);
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [sessionId] = useState<string>(() =>
@@ -175,6 +177,7 @@ export default function DashboardPage({ onLogout }: Props) {
   function handleNav(id: string) {
     setActiveNav(id);
     setSubPage(null);
+    setShowAccountSettings(false);
   }
 
   useEffect(() => {
@@ -317,13 +320,22 @@ export default function DashboardPage({ onLogout }: Props) {
         ) : activeNav === "orbit" ? (
           <NicheFeed />
         ) : activeNav === "profile" ? (
-          <ProfilePage />
+          showAccountSettings ? (
+            <AccountSettingsPage
+              onBack={() => setShowAccountSettings(false)}
+              displayName=""
+              handle=""
+              email=""
+            />
+          ) : (
+            <ProfilePage onOpenSettings={() => setShowAccountSettings(true)} />
+          )
         ) : activeNav === "notifications" ? (
           <NotificationsPage />
         ) : null}
       </main>
 
-      <aside className="hidden lg:flex flex-col w-72 shrink-0 sticky top-0 h-screen overflow-y-auto p-4 gap-5"
+      {activeNav === "profile" && <aside className="hidden lg:flex flex-col w-72 shrink-0 sticky top-0 h-screen overflow-y-auto p-4 gap-5"
         style={{ borderLeft: "1px solid var(--border)" }}>
 
         {/* ── Goals ── */}
@@ -426,7 +438,7 @@ export default function DashboardPage({ onLogout }: Props) {
           </div>
         </div>
 
-      </aside>
+      </aside>}
     </div>
   );
 }
