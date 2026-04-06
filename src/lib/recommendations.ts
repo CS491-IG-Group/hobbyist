@@ -2,11 +2,58 @@
 
 import { supabase } from "./supabase";
 
-/** Aggregated implicit preferences learned from `content_events`. */
+/**
+ * Simple timeline ranking (linear score model)
+ *
+ * 1. **Affinity** — Walk recent `content_events` (newest first, capped). For each row,
+ *    add weighted points to:
+ *    - per–hub totals (topic interest),
+ *    - per–creator totals (handle in metadata),
+ *    - optional penalties keyed by `post_id` (strong negative feedback).
+ *
+ * 2. **Post score** — For each feed card:
+ *        score = hubAffinity[hub]
+ *              + creatorAffinity[handle]
+ *              - postPenalty[id]
+ *              + JOINED_HUB_BOOST   if the user joined that hub
+ *              + POPULARITY_K * log10(likes + 10)
+ *
+ * 3. **Order** — Posts authored as "You" stay on top (newest first). Everyone else
+ *    sorts by `score` descending; ties use a stable hash of `id` so the list does not flicker.
+ */
+
+/** Extra points when the post's hub is in the user's joined list. */
+const JOINED_HUB_BOOST = 2.5;
+
+/** How much global like count nudges ordering (sublinear via log). */
+const POPULARITY_K = 0.2;
+
+/** Max recent events to scan (keeps client work bounded). */
+const MAX_EVENTS = 1000;
+
+/** Dwell → affinity: min(dwell_ms / DWELL_SCALE_MS, DWELL_CAP) * DWELL_STRENGTH */
+const DWELL_SCALE_MS = 10_000;
+const DWELL_CAP = 2.2;
+const DWELL_STRENGTH = 0.55;
+
+/** Points added to hub / creator for a single event (when metadata has hub / author_handle). */
+const WEIGHT: Record<
+  string,
+  { hub: number; creator: number; postPenalty?: number; hubOnly?: boolean }
+> = {
+  like: { hub: 3, creator: 3 },
+  save: { hub: 5, creator: 4 },
+  unsave: { hub: -1.5, creator: -1.5 },
+  join: { hub: 4, creator: 0, hubOnly: true },
+  leave: { hub: -2, creator: 0, hubOnly: true },
+  create_post: { hub: 3, creator: 0, hubOnly: true },
+  hide: { hub: -3, creator: 0, postPenalty: 12, hubOnly: true },
+  report: { hub: -5, creator: 0, postPenalty: 20, hubOnly: true },
+};
+
 export interface UserAffinity {
   hub: Record<string, number>;
   creator: Record<string, number>;
-  /** Extra downrank weight per post id (hide/report). */
   postPenalty: Record<number, number>;
 }
 
@@ -45,13 +92,33 @@ function addPenalty(rec: Record<number, number>, postId: number, delta: number) 
   rec[postId] = (rec[postId] ?? 0) + delta;
 }
 
-function normalizeHandle(h: string): string {
+export function normalizeHandle(h: string): string {
   return h.trim().toLowerCase();
 }
 
-/** Deterministic tie-break so ordering does not flicker between renders. */
 function stableTieBreak(id: number): number {
   return ((id >>> 0) * 2654435761) >>> 0;
+}
+
+function applyStandardEvent(
+  row: EventRow,
+  hub: Record<string, number>,
+  creator: Record<string, number>,
+  postPenalty: Record<number, number>
+) {
+  const w = WEIGHT[row.event_type];
+  if (!w) return;
+
+  const meta = row.metadata;
+  const hubName = hubFromMeta(meta);
+  const author = strMeta(meta, "author_handle");
+
+  if (hubName) addScore(hub, hubName, w.hub);
+  if (!w.hubOnly && author) addScore(creator, normalizeHandle(author), w.creator);
+
+  if (w.postPenalty != null && row.post_id != null) {
+    addPenalty(postPenalty, row.post_id, w.postPenalty);
+  }
 }
 
 function aggregateEventsToAffinity(rows: EventRow[]): UserAffinity {
@@ -60,63 +127,35 @@ function aggregateEventsToAffinity(rows: EventRow[]): UserAffinity {
   const postPenalty: Record<number, number> = {};
 
   for (const row of rows) {
+    if (WEIGHT[row.event_type]) {
+      applyStandardEvent(row, hub, creator, postPenalty);
+      continue;
+    }
+
     const meta = row.metadata;
     const hubName = hubFromMeta(meta);
     const author = strMeta(meta, "author_handle");
 
-    switch (row.event_type) {
-      case "like":
-        if (hubName) addScore(hub, hubName, 3);
-        if (author) addScore(creator, normalizeHandle(author), 3);
-        break;
-      case "save":
-        if (hubName) addScore(hub, hubName, 5);
-        if (author) addScore(creator, normalizeHandle(author), 4);
-        break;
-      case "unsave":
-        if (hubName) addScore(hub, hubName, -1.5);
-        if (author) addScore(creator, normalizeHandle(author), -1.5);
-        break;
-      case "join":
-        if (hubName) addScore(hub, hubName, 4);
-        break;
-      case "leave":
-        if (hubName) addScore(hub, hubName, -2);
-        break;
-      case "follow": {
-        const target = strMeta(meta, "target_handle");
-        if (target) addScore(creator, normalizeHandle(target), 3);
-        break;
+    if (row.event_type === "follow") {
+      const target = strMeta(meta, "target_handle");
+      if (target) addScore(creator, normalizeHandle(target), 3);
+      continue;
+    }
+
+    if (row.event_type === "view" && row.post_id != null) {
+      const dwell = row.dwell_ms ?? 0;
+      const d = Math.min(dwell / DWELL_SCALE_MS, DWELL_CAP) * DWELL_STRENGTH;
+      if (hubName) addScore(hub, hubName, d);
+      if (author) addScore(creator, normalizeHandle(author), d);
+      continue;
+    }
+
+    if (row.event_type === "click") {
+      const action = strMeta(meta, "action");
+      if (action === "post_card_tap" || action === "comment_button_tap") {
+        if (hubName) addScore(hub, hubName, 1);
+        if (author) addScore(creator, normalizeHandle(author), 0.9);
       }
-      case "create_post":
-        if (hubName) addScore(hub, hubName, 3);
-        break;
-      case "hide":
-        if (row.post_id != null) addPenalty(postPenalty, row.post_id, 12);
-        if (hubName) addScore(hub, hubName, -3);
-        break;
-      case "report":
-        if (row.post_id != null) addPenalty(postPenalty, row.post_id, 20);
-        if (hubName) addScore(hub, hubName, -5);
-        break;
-      case "view":
-        if (row.post_id != null) {
-          const dwell = row.dwell_ms ?? 0;
-          const d = Math.min(dwell / 10000, 2.2);
-          if (hubName) addScore(hub, hubName, d * 0.55);
-          if (author) addScore(creator, normalizeHandle(author), d * 0.55);
-        }
-        break;
-      case "click": {
-        const action = strMeta(meta, "action");
-        if (action === "post_card_tap" || action === "comment_button_tap") {
-          if (hubName) addScore(hub, hubName, 1);
-          if (author) addScore(creator, normalizeHandle(author), 0.9);
-        }
-        break;
-      }
-      default:
-        break;
     }
   }
 
@@ -133,7 +172,7 @@ export async function fetchUserAffinity(userId: string): Promise<FetchAffinityRe
     .select("event_type, post_id, dwell_ms, metadata")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
-    .limit(1000);
+    .limit(MAX_EVENTS);
 
   if (error) {
     if (process.env.NODE_ENV === "development") {
@@ -156,12 +195,11 @@ export function scorePostForUser(
     score += affinity.creator[normalizeHandle(post.handle)] ?? 0;
     score -= affinity.postPenalty[post.id] ?? 0;
   }
-  if (joinedHubs.includes(post.hub)) score += 2.5;
-  score += Math.log10(post.likes + 10) * 0.2;
+  if (joinedHubs.includes(post.hub)) score += JOINED_HUB_BOOST;
+  score += POPULARITY_K * Math.log10(post.likes + 10);
   return score;
 }
 
-/** Keeps your own posts at the top (newest first), ranks the rest by affinity. */
 export function rankTimelinePosts<T extends RankableTimelinePost>(
   posts: T[],
   affinity: UserAffinity | null,
