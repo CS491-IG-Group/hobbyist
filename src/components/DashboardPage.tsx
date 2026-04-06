@@ -11,6 +11,8 @@ import ProfilePage from "./ProfilePage";
 import AccountSettingsPage from "./AccountSettingsPage";
 import NotificationsPage from "./NotificationsPage";
 import { supabase } from "../lib/supabase";
+import { withTimeout } from "../lib/withTimeout";
+import { AnalyticsProvider, logContentEvent } from "../lib/AnalyticsContext";
 
 type SubPage =
   | null
@@ -175,6 +177,13 @@ export default function DashboardPage({ onLogout }: Props) {
   );
 
   function handleNav(id: string) {
+    void logContentEvent({
+      userId,
+      sessionId,
+      eventType: "click",
+      uiLocation: "shell",
+      metadata: { action: "main_nav", target: id, previous: activeNav },
+    });
     setActiveNav(id);
     setSubPage(null);
     setShowAccountSettings(false);
@@ -184,22 +193,42 @@ export default function DashboardPage({ onLogout }: Props) {
     let cancelled = false;
 
     const checkOnboardingAndUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (cancelled) return;
-      if (user) {
-        setUserId(user.id);
-        const { data } = await supabase
-          .from("users")
-          .select("onboarding_completed")
-          .eq("id", user.id)
-          .single();
-        setOnboardingCompleted(data?.onboarding_completed || false);
-      } else {
-        setUserId(null);
+      try {
+        const { data: { session }, error: sessionErr } = await withTimeout(
+          supabase.auth.getSession(),
+          12_000,
+          "dashboard getSession"
+        );
+        if (cancelled) return;
+        if (sessionErr) throw sessionErr;
+        const user = session?.user ?? null;
+        if (user) {
+          setUserId(user.id);
+          const res = await withTimeout(
+            supabase
+              .from("users")
+              .select("onboarding_completed")
+              .eq("id", user.id)
+              .maybeSingle(),
+            12_000,
+            "dashboard users profile"
+          );
+          if (cancelled) return;
+          setOnboardingCompleted(res.data?.onboarding_completed === true);
+        } else {
+          setUserId(null);
+        }
+      } catch (e) {
+        if (process.env.NODE_ENV === "development") {
+          console.warn("[dashboard] auth/profile init failed", e);
+        }
+        if (!cancelled) {
+          setUserId(null);
+        }
       }
     };
 
-    checkOnboardingAndUser();
+    void checkOnboardingAndUser();
 
     return () => {
       cancelled = true;
@@ -267,6 +296,7 @@ export default function DashboardPage({ onLogout }: Props) {
   ];
 
   return (
+    <AnalyticsProvider userId={userId} sessionId={sessionId}>
     <div className="flex min-h-screen" style={{ background: "var(--bg)" }}>
       <Sidebar
         activeNav={activeNav}
@@ -284,8 +314,6 @@ export default function DashboardPage({ onLogout }: Props) {
           <TimelinePage
             joinedHubs={joinedHubs}
             onToggleJoin={toggleJoinHub}
-            userId={userId}
-            sessionId={sessionId}
           />
         ) : activeNav === "discover" ? (
           subPage?.type === "item" ? (
@@ -440,5 +468,6 @@ export default function DashboardPage({ onLogout }: Props) {
 
       </aside>}
     </div>
+    </AnalyticsProvider>
   );
 }

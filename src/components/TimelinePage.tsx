@@ -1,7 +1,9 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import HubPage from "./HubsProfile";
-import { logContentEvent } from "../lib/analytics";
+import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
+import { useContentImpression } from "../lib/useContentImpression";
+import { fetchUserAffinity, rankTimelinePosts, type UserAffinity } from "../lib/recommendations";
 
 const POSTS = [
     {
@@ -126,22 +128,77 @@ const HEIGHT_CLASSES = ["h-48", "h-56", "h-64", "h-72", "h-52", "h-60"];
 
 interface PostCardProps {
     post: typeof POSTS[0];
-    userId: string | null;
-    sessionId: string;
     heightClass: string;
 }
 
-function PostCard({ post, userId, sessionId, heightClass }: PostCardProps) {
+function PostCard({ post, heightClass }: PostCardProps) {
+    const { userId, sessionId } = useAnalytics();
     const [liked, setLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(post.likes);
+    const [saved, setSaved] = useState(false);
     const [hovered, setHovered] = useState(false);
+    const [menuOpen, setMenuOpen] = useState(false);
+    const menuRef = useRef<HTMLDivElement>(null);
+
+    const impressionRef = useContentImpression({
+        userId,
+        sessionId,
+        uiLocation: "timeline",
+        postId: post.id,
+        metadata: {
+            kind: "post_impression",
+            hub: post.hub,
+            author_handle: post.handle,
+            client_post_id: post.id,
+        },
+    });
+
+    useEffect(() => {
+        if (!menuOpen) return;
+        const close = (e: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+        };
+        document.addEventListener("click", close);
+        return () => document.removeEventListener("click", close);
+    }, [menuOpen]);
 
     const handleLike = async (e: React.MouseEvent) => {
         e.stopPropagation();
         setLiked(!liked);
         setLikeCount(liked ? likeCount - 1 : likeCount + 1);
         await logContentEvent({
-            userId, sessionId, eventType: "like", postId: post.id, uiLocation: "timeline",
+            userId,
+            sessionId,
+            eventType: "like",
+            postId: post.id,
+            uiLocation: "timeline",
+            metadata: { hub: post.hub, author_handle: post.handle },
+        });
+    };
+
+    const toggleSave = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        const next = !saved;
+        setSaved(next);
+        await logContentEvent({
+            userId,
+            sessionId,
+            eventType: next ? "save" : "unsave",
+            postId: post.id,
+            uiLocation: "timeline",
+            metadata: { hub: post.hub, client_post_id: post.id },
+        });
+    };
+
+    const logHideOrReport = async (kind: "hide" | "report") => {
+        setMenuOpen(false);
+        await logContentEvent({
+            userId,
+            sessionId,
+            eventType: kind,
+            postId: post.id,
+            uiLocation: "timeline",
+            metadata: { hub: post.hub, client_post_id: post.id },
         });
     };
 
@@ -150,8 +207,24 @@ function PostCard({ post, userId, sessionId, heightClass }: PostCardProps) {
 
     return (
         <div
-            className="break-inside-avoid mb-4 rounded-2xl overflow-hidden cursor-pointer group"
+            ref={impressionRef}
+            className="break-inside-avoid mb-4 rounded-2xl overflow-hidden cursor-pointer group relative"
             style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+            onClick={() => {
+                void logContentEvent({
+                    userId,
+                    sessionId,
+                    eventType: "click",
+                    uiLocation: "timeline",
+                    postId: post.id,
+                    metadata: {
+                        action: "post_card_tap",
+                        hub: post.hub,
+                        author_handle: post.handle,
+                        client_post_id: post.id,
+                    },
+                });
+            }}
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}>
 
@@ -186,19 +259,63 @@ function PostCard({ post, userId, sessionId, heightClass }: PostCardProps) {
                     </span>
                 </div>
 
-                {/* Like button — top right, appears on hover */}
-                <button
-                    onClick={handleLike}
-                    className="absolute top-2.5 right-2.5 w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md transition-all"
+                {/* Actions — top right */}
+                <div
+                    className="absolute top-2.5 right-2.5 flex items-center gap-1 transition-all"
                     style={{
-                        background: liked ? "#ec489980" : "rgba(0,0,0,0.45)",
-                        color: liked ? "#fff" : "rgba(255,255,255,0.8)",
-                        opacity: hovered ? 1 : 0,
-                        transform: hovered ? "scale(1)" : "scale(0.8)",
-                        transition: "opacity 0.2s, transform 0.2s",
-                    }}>
-                    <HeartIcon filled={liked} />
-                </button>
+                        opacity: hovered || menuOpen || saved ? 1 : 0,
+                        transform: hovered || menuOpen ? "scale(1)" : "scale(0.85)",
+                    }}
+                    onClick={e => e.stopPropagation()}>
+                    <button
+                        onClick={toggleSave}
+                        className="w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md text-xs"
+                        style={{
+                            background: saved ? "rgba(167,139,250,0.85)" : "rgba(0,0,0,0.45)",
+                            color: "#fff",
+                        }}
+                        title={saved ? "Saved" : "Save"}>
+                        {saved ? "✓" : "🔖"}
+                    </button>
+                    <button
+                        onClick={handleLike}
+                        className="w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md"
+                        style={{
+                            background: liked ? "#ec489980" : "rgba(0,0,0,0.45)",
+                            color: liked ? "#fff" : "rgba(255,255,255,0.8)",
+                        }}>
+                        <HeartIcon filled={liked} />
+                    </button>
+                    <div className="relative" ref={menuRef}>
+                        <button
+                            type="button"
+                            onClick={e => { e.stopPropagation(); setMenuOpen(v => !v); }}
+                            className="w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md text-white text-sm font-bold"
+                            style={{ background: "rgba(0,0,0,0.45)" }}>
+                            ···
+                        </button>
+                        {menuOpen && (
+                            <div
+                                className="absolute right-0 mt-1 py-1 rounded-lg text-left min-w-[132px] z-20 shadow-lg"
+                                style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
+                                <button
+                                    type="button"
+                                    className="block w-full text-left text-xs px-3 py-2 hover:opacity-80"
+                                    style={{ color: "var(--text)" }}
+                                    onClick={e => { e.stopPropagation(); void logHideOrReport("hide"); }}>
+                                    Hide / not interested
+                                </button>
+                                <button
+                                    type="button"
+                                    className="block w-full text-left text-xs px-3 py-2 hover:opacity-80"
+                                    style={{ color: "#f87171" }}
+                                    onClick={e => { e.stopPropagation(); void logHideOrReport("report"); }}>
+                                    Report
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
 
             {/* Caption + user info below image */}
@@ -231,10 +348,29 @@ function PostCard({ post, userId, sessionId, heightClass }: PostCardProps) {
                             <HeartIcon filled={liked} />
                             {likeCount}
                         </span>
-                        <span className="flex items-center gap-1 text-[10px]" style={{ color: "var(--text-muted)" }}>
+                        <button
+                            type="button"
+                            onClick={e => {
+                                e.stopPropagation();
+                                void logContentEvent({
+                                    userId,
+                                    sessionId,
+                                    eventType: "click",
+                                    uiLocation: "timeline",
+                                    postId: post.id,
+                                    metadata: {
+                                        action: "comment_button_tap",
+                                        hub: post.hub,
+                                        author_handle: post.handle,
+                                        client_post_id: post.id,
+                                    },
+                                });
+                            }}
+                            className="flex items-center gap-1 text-[10px]"
+                            style={{ color: "var(--text-muted)" }}>
                             <CommentIcon />
                             {post.comments}
-                        </span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -242,7 +378,11 @@ function PostCard({ post, userId, sessionId, heightClass }: PostCardProps) {
     );
 }
 
-function CreatePostModal({ onClose, onPost }: { onClose: () => void; onPost: (text: string, hub: string) => void }) {
+function CreatePostModal({ onClose, onPost }: {
+    onClose: () => void;
+    onPost: (text: string, hub: string) => void;
+}) {
+    const { userId, sessionId } = useAnalytics();
     const [text, setText] = React.useState("");
     const [selectedHub, setSelectedHub] = React.useState("");
     const maxChars = 280;
@@ -250,13 +390,33 @@ function CreatePostModal({ onClose, onPost }: { onClose: () => void; onPost: (te
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
             style={{ background: "rgba(0,0,0,0.7)" }}
-            onClick={onClose}>
+            onClick={() => {
+                void logContentEvent({
+                    userId,
+                    sessionId,
+                    eventType: "click",
+                    uiLocation: "timeline",
+                    metadata: { action: "compose_overlay_dismiss", had_text: text.trim().length > 0 },
+                });
+                onClose();
+            }}>
             <div className="w-full max-w-lg rounded-2xl overflow-hidden"
                 onClick={e => e.stopPropagation()}
                 style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
                 <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: "1px solid var(--border)" }}>
                     <h2 className="text-base font-bold" style={{ fontFamily: "Syne, sans-serif" }}>Create Post</h2>
-                    <button onClick={onClose} style={{ color: "var(--text-muted)" }}>
+                    <button
+                        onClick={() => {
+                            void logContentEvent({
+                                userId,
+                                sessionId,
+                                eventType: "click",
+                                uiLocation: "timeline",
+                                metadata: { action: "compose_dismiss", had_text: text.trim().length > 0 },
+                            });
+                            onClose();
+                        }}
+                        style={{ color: "var(--text-muted)" }}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                         </svg>
@@ -321,7 +481,23 @@ function CreatePostModal({ onClose, onPost }: { onClose: () => void; onPost: (te
                             </button>
                         </div>
                         <button
-                            onClick={() => { if (text.trim() && selectedHub) { onPost(text.trim(), selectedHub); onClose(); } }}
+                            onClick={() => {
+                                if (text.trim() && selectedHub) {
+                                    void logContentEvent({
+                                        userId,
+                                        sessionId,
+                                        eventType: "create_post",
+                                        uiLocation: "timeline",
+                                        metadata: {
+                                            action: "compose_submit",
+                                            hub: selectedHub,
+                                            char_len: text.trim().length,
+                                        },
+                                    });
+                                    onPost(text.trim(), selectedHub);
+                                    onClose();
+                                }
+                            }}
                             disabled={!text.trim() || !selectedHub}
                             className="px-5 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{ background: "var(--gradient-btn)" }}>
@@ -337,15 +513,22 @@ function CreatePostModal({ onClose, onPost }: { onClose: () => void; onPost: (te
 interface TimelinePageProps {
     joinedHubs: string[];
     onToggleJoin: (hubName: string) => void;
-    userId: string | null;
-    sessionId: string;
 }
 
-export default function TimelinePage({ joinedHubs, onToggleJoin, userId, sessionId }: TimelinePageProps) {
+export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageProps) {
+    const { userId, sessionId } = useAnalytics();
+    const timelineDwellRef = useContentImpression({
+        userId,
+        sessionId,
+        uiLocation: "timeline",
+        metadata: { kind: "timeline_feed_screen_dwell" },
+    });
     const [activeFilter, setActiveFilter] = useState("All");
     const [showCompose, setShowCompose] = useState(false);
     const [activeHub, setActiveHub] = useState<string | null>(null);
     const [posts, setPosts] = useState(POSTS);
+    const [affinity, setAffinity] = useState<UserAffinity | null>(null);
+    const [affinityReady, setAffinityReady] = useState(false);
 
     const handleNewPost = (text: string, hub: string) => {
         const newPost = {
@@ -368,8 +551,44 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
 
     const filtered = activeFilter === "All" ? posts : posts.filter(p => p.hub === activeFilter);
 
+    const feedPosts = useMemo(() => {
+        if (!affinityReady) return filtered;
+        return rankTimelinePosts(filtered, affinity, joinedHubs);
+    }, [filtered, affinity, affinityReady, joinedHubs]);
+
     useEffect(() => {
-        logContentEvent({ userId, sessionId, eventType: "view", uiLocation: "timeline" });
+        if (!userId) {
+            setAffinity(null);
+            setAffinityReady(false);
+            return;
+        }
+        let cancelled = false;
+        setAffinityReady(false);
+        void (async () => {
+            const res = await fetchUserAffinity(userId);
+            if (!cancelled) {
+                if (res.ok) {
+                    setAffinity(res.affinity);
+                    setAffinityReady(true);
+                } else {
+                    setAffinity(null);
+                    setAffinityReady(false);
+                }
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [userId]);
+
+    useEffect(() => {
+        logContentEvent({
+            userId,
+            sessionId,
+            eventType: "view",
+            uiLocation: "timeline",
+            metadata: { screen: "timeline_feed" },
+        });
     }, [userId, sessionId]);
 
     if (activeHub) {
@@ -385,21 +604,44 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
 
     return (
         <div className="flex flex-1 min-h-screen" style={{ background: "var(--bg)" }}>
-            <div className="flex-1 overflow-y-auto">
+            <div ref={timelineDwellRef} className="flex-1 overflow-y-auto">
                 <div className="px-6 py-6">
 
                     {/* Header */}
                     <div className="flex items-center justify-between mb-5">
-                        <h1 className="text-xl font-bold" style={{ fontFamily: "Syne, sans-serif" }}>Timeline</h1>
+                        <div className="flex items-center gap-2 min-w-0">
+                            <h1 className="text-xl font-bold shrink-0" style={{ fontFamily: "Syne, sans-serif" }}>Timeline</h1>
+                            {affinityReady && activeFilter === "All" && (
+                                <span
+                                    className="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0"
+                                    style={{
+                                        background: "rgba(139,92,246,0.15)",
+                                        color: "#a78bfa",
+                                        border: "1px solid rgba(139,92,246,0.25)",
+                                    }}
+                                    title="Order is based on your hubs, likes, saves, and views">
+                                    For you
+                                </span>
+                            )}
+                        </div>
                         <span className="text-xs px-2.5 py-1 rounded-full" style={{ background: "var(--surface2)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
-                            {filtered.length} posts
+                            {feedPosts.length} posts
                         </span>
                     </div>
 
                     {/* Filter pills */}
                     <div className="flex gap-2 overflow-x-auto pb-3 mb-6 scrollbar-hide">
                         {FILTERS.map(f => (
-                            <button key={f} onClick={() => setActiveFilter(f)}
+                            <button key={f} onClick={() => {
+                                void logContentEvent({
+                                    userId,
+                                    sessionId,
+                                    eventType: "click",
+                                    uiLocation: "timeline",
+                                    metadata: { action: "filter_hub_pill", filter: f, previous: activeFilter },
+                                });
+                                setActiveFilter(f);
+                            }}
                                 className="px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all"
                                 style={{
                                     background: activeFilter === f ? "var(--gradient-btn)" : "var(--surface2)",
@@ -413,12 +655,10 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
 
                     {/* Masonry grid — 2 columns on md+, 1 on mobile */}
                     <div className="columns-1 md:columns-2 gap-4">
-                        {filtered.map((post, i) => (
+                        {feedPosts.map((post, i) => (
                             <PostCard
                                 key={post.id}
                                 post={post}
-                                userId={userId}
-                                sessionId={sessionId}
                                 heightClass={HEIGHT_CLASSES[i % HEIGHT_CLASSES.length]}
                             />
                         ))}
@@ -427,7 +667,16 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
 
                 {/* Floating compose button */}
                 <button
-                    onClick={() => setShowCompose(true)}
+                    onClick={() => {
+                        void logContentEvent({
+                            userId,
+                            sessionId,
+                            eventType: "click",
+                            uiLocation: "timeline",
+                            metadata: { action: "compose_open_fab" },
+                        });
+                        setShowCompose(true);
+                    }}
                     className="fixed bottom-8 z-40 w-14 h-14 rounded-full flex items-center justify-center text-white transition-all hover:scale-110 active:scale-95"
                     style={{
                         right: "calc(320px + 2rem)",
@@ -462,7 +711,16 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
                                 <div key={hub.name}
                                     className="rounded-xl p-3 transition-all hover:scale-[1.02] h-14 flex items-center cursor-pointer"
                                     style={{ background: hub.bg, border: "1px solid rgba(255,255,255,0.1)", boxShadow: `0 4px 16px ${hub.color}20` }}
-                                    onClick={() => setActiveHub(hub.name)}>
+                                    onClick={() => {
+                                        void logContentEvent({
+                                            userId,
+                                            sessionId,
+                                            eventType: "click",
+                                            uiLocation: "timeline",
+                                            metadata: { action: "open_hub_from_trending", hub: hub.name },
+                                        });
+                                        setActiveHub(hub.name);
+                                    }}>
                                     <div className="flex items-center gap-3 w-full">
                                         <span className="text-2xl">{hub.emoji}</span>
                                         <div className="flex-1 min-w-0">
@@ -473,7 +731,21 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
                                             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
                                                 style={{ background: "rgba(255,255,255,0.15)", color: "#4ade80" }}>↑ {hub.trend}</span>
                                             <button
-                                                onClick={e => { e.stopPropagation(); onToggleJoin(hub.name); }}
+                                                onClick={e => {
+                                                    e.stopPropagation();
+                                                    void logContentEvent({
+                                                        userId,
+                                                        sessionId,
+                                                        eventType: isJoined ? "leave" : "join",
+                                                        uiLocation: "timeline",
+                                                        metadata: {
+                                                            action: isJoined ? "leave_hub" : "join_hub",
+                                                            hub: hub.name,
+                                                            source: "timeline_trending_card",
+                                                        },
+                                                    });
+                                                    onToggleJoin(hub.name);
+                                                }}
                                                 className="text-[10px] px-2 py-1 rounded-lg font-semibold transition-all hover:opacity-80"
                                                 style={isJoined
                                                     ? { background: "rgba(255,255,255,0.2)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)" }
@@ -526,7 +798,21 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
                                         ))}
                                         <span className="text-[9px] px-1 py-0.5" style={{ color: "var(--text-muted)" }}>mutual</span>
                                     </div>
-                                    <button className="text-[10px] px-2.5 py-1 rounded-lg font-semibold shrink-0 transition-all hover:opacity-90"
+                                    <button
+                                        type="button"
+                                        onClick={() => void logContentEvent({
+                                            userId,
+                                            sessionId,
+                                            eventType: "follow",
+                                            uiLocation: "timeline",
+                                            metadata: {
+                                                action: "follow_suggestion",
+                                                target_handle: friend.handle,
+                                                target_name: friend.name,
+                                                mutual_hubs: friend.mutualHubs,
+                                            },
+                                        })}
+                                        className="text-[10px] px-2.5 py-1 rounded-lg font-semibold shrink-0 transition-all hover:opacity-90"
                                         style={{ background: "rgba(139,92,246,0.15)", color: "#a78bfa", border: "1px solid rgba(139,92,246,0.2)" }}>
                                         Follow
                                     </button>
@@ -537,7 +823,12 @@ export default function TimelinePage({ joinedHubs, onToggleJoin, userId, session
                 </div>
             </aside>
 
-            {showCompose && <CreatePostModal onClose={() => setShowCompose(false)} onPost={handleNewPost} />}
+            {showCompose && (
+                <CreatePostModal
+                    onClose={() => setShowCompose(false)}
+                    onPost={handleNewPost}
+                />
+            )}
         </div>
     );
 }

@@ -1,6 +1,8 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
+import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
+import { useContentImpression } from "../lib/useContentImpression";
 
 const HUBS = [
     { name: "Cars", color: "#3b82f6", emoji: "🚗" },
@@ -349,10 +351,27 @@ function EditProfileModal({
 
 // ─── Profile Page ─────────────────────────────────────────────────────────────
 export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () => void }) {
+    const { userId: analyticsUserId, sessionId } = useAnalytics();
     const [activeTab, setActiveTab] = useState<"posts" | "hubs" | "badges">("posts");
     const [showEditModal, setShowEditModal] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
     const [profile, setProfile] = useState<ProfileData>({ display_name: "", handle: "", email: "", bio: "" });
+    const profileDwellRef = useContentImpression({
+        userId: analyticsUserId,
+        sessionId,
+        uiLocation: "profile",
+        metadata: { kind: "profile_screen_dwell" },
+    });
+
+    useEffect(() => {
+        void logContentEvent({
+            userId: analyticsUserId,
+            sessionId,
+            eventType: "view",
+            uiLocation: "profile",
+            metadata: { screen: "profile_main" },
+        });
+    }, [analyticsUserId, sessionId]);
 
     // Load current user on mount
     useEffect(() => {
@@ -384,7 +403,7 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
     }
 
     return (
-        <div className="flex-1 overflow-y-auto" style={{ background: "var(--bg)" }}>
+        <div ref={profileDwellRef} className="flex-1 overflow-y-auto" style={{ background: "var(--bg)" }}>
             <div className="max-w-3xl mx-auto px-6 py-8">
 
                 {/* Header card */}
@@ -462,7 +481,16 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
                             Edit Profile
                         </button>
                         <button
-                            onClick={() => onOpenSettings?.()}
+                            onClick={() => {
+                                void logContentEvent({
+                                    userId: analyticsUserId,
+                                    sessionId,
+                                    eventType: "click",
+                                    uiLocation: "profile",
+                                    metadata: { action: "open_account_settings" },
+                                });
+                                onOpenSettings?.();
+                            }}
                             className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
                             style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)" }}
                         >
@@ -479,7 +507,16 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
                     {(["posts", "hubs", "badges"] as const).map(tab => (
                         <button
                             key={tab}
-                            onClick={() => setActiveTab(tab)}
+                            onClick={() => {
+                                void logContentEvent({
+                                    userId: analyticsUserId,
+                                    sessionId,
+                                    eventType: "click",
+                                    uiLocation: "profile",
+                                    metadata: { action: "profile_tab", tab, previous_tab: activeTab },
+                                });
+                                setActiveTab(tab);
+                            }}
                             className="flex-1 py-2 rounded-lg text-sm font-semibold capitalize transition-all"
                             style={{
                                 background: activeTab === tab ? "var(--gradient-btn)" : "transparent",
@@ -497,7 +534,30 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
                         {POSTS.map((post, i) => (
                             <div
                                 key={i}
-                                className="rounded-2xl p-4 flex gap-4"
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => {
+                                    void logContentEvent({
+                                        userId: analyticsUserId,
+                                        sessionId,
+                                        eventType: "click",
+                                        uiLocation: "profile",
+                                        metadata: { action: "profile_post_row_tap", tag: post.tag, index: i },
+                                    });
+                                }}
+                                onKeyDown={e => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        void logContentEvent({
+                                            userId: analyticsUserId,
+                                            sessionId,
+                                            eventType: "click",
+                                            uiLocation: "profile",
+                                            metadata: { action: "profile_post_row_tap", tag: post.tag, index: i },
+                                        });
+                                    }
+                                }}
+                                className="rounded-2xl p-4 flex gap-4 cursor-pointer transition-opacity hover:opacity-90"
                                 style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
                             >
                                 <div
@@ -529,7 +589,30 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
                         {HUBS.map(hub => (
                             <div
                                 key={hub.name}
-                                className="rounded-2xl p-4 flex items-center gap-3 transition-all hover:opacity-80"
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => {
+                                    void logContentEvent({
+                                        userId: analyticsUserId,
+                                        sessionId,
+                                        eventType: "click",
+                                        uiLocation: "profile",
+                                        metadata: { action: "profile_hub_tile_tap", hub: hub.name },
+                                    });
+                                }}
+                                onKeyDown={e => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        void logContentEvent({
+                                            userId: analyticsUserId,
+                                            sessionId,
+                                            eventType: "click",
+                                            uiLocation: "profile",
+                                            metadata: { action: "profile_hub_tile_tap", hub: hub.name },
+                                        });
+                                    }
+                                }}
+                                className="rounded-2xl p-4 flex items-center gap-3 transition-all hover:opacity-80 cursor-pointer"
                                 style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
                             >
                                 <div

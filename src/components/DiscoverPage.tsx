@@ -1,6 +1,8 @@
 "use client";
-import React from "react";
+import React, { useEffect } from "react";
 import categories from "./hubData";
+import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
+import { useContentImpression } from "../lib/useContentImpression";
 
 interface Hub {
   id: string;
@@ -76,8 +78,26 @@ interface DiscoverPageProps {
 }
 
 export default function DiscoverPage({ onSelectCategory }: DiscoverPageProps) {
+  const { userId, sessionId } = useAnalytics();
+  const dwellRef = useContentImpression({
+    userId,
+    sessionId,
+    uiLocation: "discover",
+    metadata: { kind: "discover_root_dwell" },
+  });
+
+  useEffect(() => {
+    void logContentEvent({
+      userId,
+      sessionId,
+      eventType: "view",
+      uiLocation: "discover",
+      metadata: { screen: "discover_root" },
+    });
+  }, [userId, sessionId]);
+
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8">
+    <div ref={dwellRef} className="max-w-4xl mx-auto px-6 py-8">
       <h1
         className="text-2xl font-bold mb-6"
         style={{ fontFamily: "Syne, sans-serif", color: "var(--text)" }}
@@ -90,7 +110,16 @@ export default function DiscoverPage({ onSelectCategory }: DiscoverPageProps) {
           <HubCard
             key={cat.id}
             hub={cat}
-            onClick={() => onSelectCategory?.(cat.id)}
+            onClick={() => {
+              void logContentEvent({
+                userId,
+                sessionId,
+                eventType: "click",
+                uiLocation: "discover",
+                metadata: { action: "open_category", category_id: cat.id, category_name: cat.name },
+              });
+              onSelectCategory?.(cat.id);
+            }}
           />
         ))}
       </div>

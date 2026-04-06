@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useRef, useEffect } from "react";
+import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 
 const CONVERSATIONS = [
     {
@@ -123,6 +124,7 @@ function BackIcon() {
 }
 
 function ChatWindow({ convo, onBack }: { convo: Conversation; onBack: () => void }) {
+    const { userId, sessionId } = useAnalytics();
     const [messages, setMessages] = useState<Message[]>(convo.messages);
     const [input, setInput] = useState("");
     const bottomRef = useRef<HTMLDivElement>(null);
@@ -133,10 +135,24 @@ function ChatWindow({ convo, onBack }: { convo: Conversation; onBack: () => void
 
     const send = () => {
         if (!input.trim()) return;
+        const body = input.trim();
+        void logContentEvent({
+            userId,
+            sessionId,
+            eventType: "message",
+            uiLocation: "orbit",
+            metadata: {
+                action: "dm_send",
+                peer_handle: convo.handle,
+                shared_hub: convo.sharedHub,
+                char_len: body.length,
+                conversation_id: convo.id,
+            },
+        });
         setMessages(prev => [...prev, {
             id: prev.length + 1,
             from: "me",
-            text: input.trim(),
+            text: body,
             time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         }]);
         setInput("");
@@ -147,7 +163,19 @@ function ChatWindow({ convo, onBack }: { convo: Conversation; onBack: () => void
             {/* Header */}
             <div className="flex items-center gap-3 px-4 py-3 shrink-0"
                 style={{ borderBottom: "1px solid var(--border)" }}>
-                <button onClick={onBack} className="lg:hidden mr-1" style={{ color: "var(--text-muted)" }}>
+                <button
+                    onClick={() => {
+                        void logContentEvent({
+                            userId,
+                            sessionId,
+                            eventType: "click",
+                            uiLocation: "orbit",
+                            metadata: { action: "conversation_back_mobile", peer_handle: convo.handle },
+                        });
+                        onBack();
+                    }}
+                    className="lg:hidden mr-1"
+                    style={{ color: "var(--text-muted)" }}>
                     <BackIcon />
                 </button>
                 <div className="relative">
@@ -229,9 +257,20 @@ function ChatWindow({ convo, onBack }: { convo: Conversation; onBack: () => void
 }
 
 export default function NicheFeed() {
+    const { userId, sessionId } = useAnalytics();
     const [selected, setSelected] = useState<Conversation | null>(null);
     const [convos, setConvos] = useState(CONVERSATIONS);
     const [search, setSearch] = useState("");
+
+    useEffect(() => {
+        void logContentEvent({
+            userId,
+            sessionId,
+            eventType: "view",
+            uiLocation: "orbit",
+            metadata: { screen: "messages" },
+        });
+    }, [userId, sessionId]);
 
     const filtered = convos.filter(c =>
         c.user.toLowerCase().includes(search.toLowerCase()) ||
@@ -239,6 +278,17 @@ export default function NicheFeed() {
     );
 
     const selectConvo = (convo: Conversation) => {
+        void logContentEvent({
+            userId,
+            sessionId,
+            eventType: "click",
+            uiLocation: "orbit",
+            metadata: {
+                action: "open_conversation",
+                peer_handle: convo.handle,
+                shared_hub: convo.sharedHub,
+            },
+        });
         setSelected(convo);
         setConvos(prev => prev.map(c => c.id === convo.id ? { ...c, unread: 0 } : c));
     };
