@@ -126,7 +126,49 @@ export default function CategoryPage({
     if (!category) {
         return (
             <div className="max-w-4xl mx-auto px-6 py-8">
-                <p style={{ color: "var(--text-muted)" }}>Category not found.</p>
+                <button
+                    onClick={() => {
+                        void logContentEvent({
+                            userId,
+                            sessionId,
+                            eventType: "click",
+                            uiLocation: "category",
+                            metadata: { action: "back_to_discover", from: "category", category_id: categoryId },
+                        });
+                        onBack();
+                    }}
+                    className="flex items-center gap-1 mb-6 text-sm font-medium transition-all hover:opacity-80"
+                    style={{ color: "#a78bfa" }}
+                >
+                    <BackIcon />
+                    <span>Discover</span>
+                </button>
+
+                <div className="flex items-center gap-3 mb-4">
+                    <div
+                        className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
+                        style={{
+                            background: "linear-gradient(135deg, #312e81 0%, #6366f1 100%)",
+                        }}
+                    >
+                        ✨
+                    </div>
+                    <div>
+                        <h1
+                            className="text-2xl font-bold"
+                            style={{ fontFamily: "Syne, sans-serif", color: "var(--text)" }}
+                        >
+                            {categoryId}
+                        </h1>
+                        <p className="text-sm" style={{ color: "var(--text-dim)" }}>
+                            No hubs are configured for this hobby yet.
+                        </p>
+                    </div>
+                </div>
+
+                <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                    Add this hobby to `src/components/hubData.ts` (or wire hubs to Supabase) to show hubs here.
+                </p>
             </div>
         );
     }
