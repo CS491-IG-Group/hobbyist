@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
+import { supabase } from "../lib/supabase";
 
 interface Props {
   onBack: () => void;
@@ -82,6 +83,9 @@ export default function AccountSettingsPage({ onBack, displayName, handle, email
   const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [isPrivate, setIsPrivate] = useState(false);
   const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [authEmail, setAuthEmail] = useState(email);
   const settingsDwellRef = useContentImpression({
     userId,
     sessionId,
@@ -89,22 +93,53 @@ export default function AccountSettingsPage({ onBack, displayName, handle, email
     metadata: { kind: "account_settings_screen_dwell" },
   });
 
-  function handleUpdatePassword() {
-    // Visual only — no backend call
-    if (!currentPassword || !newPassword || !confirmPassword) return;
-    if (newPassword !== confirmPassword) return;
-    void logContentEvent({
-      userId,
-      sessionId,
-      eventType: "click",
-      uiLocation: "account_settings",
-      metadata: { action: "password_update_submit_client_only" },
-    });
-    setPasswordSuccess(true);
-    setCurrentPassword("");
-    setNewPassword("");
-    setConfirmPassword("");
-    setTimeout(() => setPasswordSuccess(false), 3000);
+  async function handleUpdatePassword() {
+    if (!canSubmitPw || passwordLoading) return;
+
+    setPasswordError(null);
+    setPasswordSuccess(false);
+    setPasswordLoading(true);
+
+    try {
+      const emailToUse = authEmail || email;
+      if (!emailToUse) {
+        setPasswordError("Could not determine your account email.");
+        return;
+      }
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: emailToUse,
+        password: currentPassword,
+      });
+      if (signInError) {
+        setPasswordError("Current password is incorrect.");
+        return;
+      }
+
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      if (updateError) {
+        setPasswordError(updateError.message);
+        return;
+      }
+
+      void logContentEvent({
+        userId,
+        sessionId,
+        eventType: "click",
+        uiLocation: "account_settings",
+        metadata: { action: "password_update_submit" },
+      });
+
+      setPasswordSuccess(true);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setTimeout(() => setPasswordSuccess(false), 3000);
+    } finally {
+      setPasswordLoading(false);
+    }
   }
 
   const passwordMismatch = confirmPassword.length > 0 && newPassword !== confirmPassword;
@@ -113,6 +148,15 @@ export default function AccountSettingsPage({ onBack, displayName, handle, email
     currentPassword.length > 0 &&
     newPassword.length >= 8 &&
     newPassword === confirmPassword;
+
+  useEffect(() => {
+    if (authEmail) return;
+    supabase.auth.getUser().then(({ data, error }) => {
+      if (!error && data.user?.email) {
+        setAuthEmail(data.user.email);
+      }
+    });
+  }, [authEmail]);
 
   useEffect(() => {
     void logContentEvent({
@@ -322,6 +366,12 @@ export default function AccountSettingsPage({ onBack, displayName, handle, email
               )}
             </div>
 
+            {passwordError && (
+              <p className="text-xs mt-1" style={{ color: "#f87171" }}>
+                {passwordError}
+              </p>
+            )}
+
             {/* Success message */}
             {passwordSuccess && (
               <div
@@ -339,11 +389,11 @@ export default function AccountSettingsPage({ onBack, displayName, handle, email
             {/* Update Password button */}
             <button
               onClick={handleUpdatePassword}
-              disabled={!canSubmitPw}
+              disabled={!canSubmitPw || passwordLoading}
               className="w-full py-3 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed mt-1"
               style={{ background: "var(--gradient-btn)" }}
             >
-              Update Password
+              {passwordLoading ? "Updating..." : "Update Password"}
             </button>
           </div>
         </div>
