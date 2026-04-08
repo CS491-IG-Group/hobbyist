@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import HubPage from "./HubsProfile";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
@@ -517,6 +517,70 @@ interface TimelinePageProps {
 }
 
 export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageProps) {
+    const formatTimeAgo = (dateString: string) => {
+        const now = new Date();
+        const then = new Date(dateString);
+        const diffMs = now.getTime() - then.getTime();
+
+        const minutes = Math.floor(diffMs / (1000 * 60));
+        const hours = Math.floor(diffMs / (1000 * 60 * 60));
+        const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+        if (minutes < 1) return "Just now";
+        if (minutes < 60) return `${minutes}m ago`;
+        if (hours < 24) return `${hours}h ago`;
+        return `${days}d ago`;
+    };
+
+    const loadPosts = useCallback(async () => {
+        try {
+            setLoadingPosts(true);
+
+            const { data, error } = await supabase
+                .from("posts")
+                .select(`
+                    id,
+                    body,
+                    created_at,
+                    hobbies (name)
+                `)
+                .order("created_at", { ascending: false });
+
+            if (error) {
+                console.error("Error loading posts:", error.message);
+                return;
+            }
+
+            const mapped = (data || []).map((post: any) => {
+                const hubName = post.hobbies?.name || "Unknown";
+
+                return {
+                    id: post.id,
+                    user: "You",
+                    handle: "@you",
+                    avatar: "✨",
+                    avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
+                    hub: hubName,
+                    hubColor: HUB_COLORS[hubName] || "#8b5cf6",
+                    time: formatTimeAgo(post.created_at),
+                    text: post.body,
+                    image: null,
+                    likes: 0,
+                    comments: 0,
+                    reposts: 0,
+                };
+            });
+
+            setPosts(mapped);
+        } catch (err) {
+            console.error("Load posts error:", err);
+        } finally {
+            setLoadingPosts(false);
+        }
+    }, []);
+
+
+
     const { userId, sessionId } = useAnalytics();
     const timelineDwellRef = useContentImpression({
         userId,
@@ -527,7 +591,8 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
     const [activeFilter, setActiveFilter] = useState("All");
     const [showCompose, setShowCompose] = useState(false);
     const [activeHub, setActiveHub] = useState<string | null>(null);
-    const [posts, setPosts] = useState(POSTS);
+    const [posts, setPosts] = useState<any[]>([]);
+    const [loadingPosts, setLoadingPosts] = useState(true);
     const [affinity, setAffinity] = useState<UserAffinity | null>(null);
     const [affinityReady, setAffinityReady] = useState(false);
 
@@ -588,11 +653,18 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
     }, [filtered, affinity, affinityReady, joinedHubs]);
 
     useEffect(() => {
+        if (!userId) return; //  wait until user is ready
+
+        loadPosts();
+    }, [userId, loadPosts]);
+
+    useEffect(() => {
         if (!userId) {
             setAffinity(null);
             setAffinityReady(false);
             return;
         }
+
         let cancelled = false;
         setAffinityReady(false);
         void (async () => {
