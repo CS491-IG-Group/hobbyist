@@ -78,11 +78,32 @@ interface DiscoverPageProps {
   onSelectCategory?: (categoryId: string) => void;
 }
 
+interface HobbyRow {
+  id: number;
+  name: string;
+  slug: string;
+  desc?: string | null;
+}
+
+function titleCaseFromSlug(slug: string) {
+  return slug
+    .split(/[-_ ]+/g)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+function hashToIndex(s: string, mod: number) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return mod === 0 ? 0 : h % mod;
+}
+
 export default function DiscoverPage({ onSelectCategory }: DiscoverPageProps) {
   const { userId, sessionId } = useAnalytics();
-  const [allowedSlugs, setAllowedSlugs] = useState<Set<string> | null>(null);
   const [hobbiesLoading, setHobbiesLoading] = useState(true);
   const [hobbiesError, setHobbiesError] = useState<string | null>(null);
+  const [hobbies, setHobbies] = useState<HobbyRow[]>([]);
   const dwellRef = useContentImpression({
     userId,
     sessionId,
@@ -98,19 +119,19 @@ export default function DiscoverPage({ onSelectCategory }: DiscoverPageProps) {
       try {
         const { data, error } = await supabase
           .from("hobbies")
-          .select("slug");
+          .select("id,name,slug,desc")
+          .order("name", { ascending: true });
 
         if (cancelled) return;
         if (error) {
           if (process.env.NODE_ENV === "development") {
             console.warn("[discover] hobbies load failed", error);
           }
-          setAllowedSlugs(null);
+          setHobbies([]);
           setHobbiesError(error.message);
           return;
         }
-        const slugs = new Set((data ?? []).map((r) => String(r.slug)).filter(Boolean));
-        setAllowedSlugs(slugs);
+        setHobbies((data ?? []) as HobbyRow[]);
       } finally {
         if (!cancelled) setHobbiesLoading(false);
       }
@@ -132,12 +153,51 @@ export default function DiscoverPage({ onSelectCategory }: DiscoverPageProps) {
     });
   }, [userId, sessionId]);
 
-  const visibleCategories = useMemo(() => {
+  const visibleCategories: Hub[] = useMemo(() => {
     if (hobbiesLoading) return [];
-    if (!allowedSlugs) return categories;
-    const filtered = categories.filter((c) => allowedSlugs.has(c.id));
-    return filtered.length > 0 ? filtered : categories;
-  }, [allowedSlugs, hobbiesLoading]);
+
+    // If hobbies couldn't be loaded (RLS, offline, etc), fall back to mock categories.
+    if (!hobbies || hobbies.length === 0) return categories;
+
+    const palette = [
+      { from: "#4c1d95", to: "#7c3aed" },
+      { from: "#7f1d1d", to: "#ef4444" },
+      { from: "#064e3b", to: "#10b981" },
+      { from: "#1e3a8a", to: "#3b82f6" },
+      { from: "#831843", to: "#ec4899" },
+      { from: "#78350f", to: "#f59e0b" },
+      { from: "#312e81", to: "#6366f1" },
+      { from: "#0f172a", to: "#334155" },
+    ];
+
+    return hobbies.map((h) => {
+      const slug = String(h.slug);
+      const backendDesc = (h.desc ?? "").trim();
+      const existing = categories.find((c) => c.id === slug);
+      if (existing) {
+        return {
+          id: existing.id,
+          name: h.name || existing.name,
+          description: backendDesc || existing.description,
+          emoji: existing.emoji,
+          gradientFrom: existing.gradientFrom,
+          gradientTo: existing.gradientTo,
+        };
+      }
+
+      const idx = hashToIndex(slug, palette.length);
+      const colors = palette[idx] ?? palette[0];
+      const name = h.name || titleCaseFromSlug(slug);
+      return {
+        id: slug,
+        name,
+        description: backendDesc || `Explore hubs for ${name}.`,
+        emoji: "✨",
+        gradientFrom: colors.from,
+        gradientTo: colors.to,
+      };
+    });
+  }, [hobbies, hobbiesLoading]);
 
   return (
     <div ref={dwellRef} className="max-w-4xl mx-auto px-6 py-8">
