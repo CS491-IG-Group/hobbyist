@@ -4,6 +4,7 @@ import HubPage from "./HubsProfile";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
 import { fetchUserAffinity, rankTimelinePosts, type UserAffinity } from "../lib/recommendations";
+import { supabase } from "../lib/supabase";
 
 const POSTS = [
     {
@@ -530,7 +531,37 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
     const [affinity, setAffinity] = useState<UserAffinity | null>(null);
     const [affinityReady, setAffinityReady] = useState(false);
 
-    const handleNewPost = (text: string, hub: string) => {
+    // ── Updated: saves post to Supabase before updating local feed ──
+    const handleNewPost = async (text: string, hub: string) => {
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+
+            if (user) {
+                // Look up the hobby_id by matching the hub name
+                const { data: hobby } = await supabase
+                    .from("hobbies")
+                    .select("id")
+                    .eq("name", hub)
+                    .maybeSingle();
+
+                const { error } = await supabase.from("posts").insert({
+                    user_id: user.id,
+                    body: text,
+                    hobby_id: hobby?.id ?? null,
+                    post_type: "text",
+                });
+
+                if (error) {
+                    console.error("[handleNewPost] Supabase insert failed:", error.message);
+                }
+            } else {
+                console.warn("[handleNewPost] No authenticated user found — post not saved to Supabase.");
+            }
+        } catch (err) {
+            console.error("[handleNewPost] Unexpected error:", err);
+        }
+
+        // Always update the local feed instantly regardless of Supabase result
         const newPost = {
             id: Date.now(),
             user: "You",
@@ -826,7 +857,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
             {showCompose && (
                 <CreatePostModal
                     onClose={() => setShowCompose(false)}
-                    onPost={handleNewPost}
+                    onPost={(text, hub) => void handleNewPost(text, hub)}
                 />
             )}
         </div>
