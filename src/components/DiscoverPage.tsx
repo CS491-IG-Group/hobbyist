@@ -1,8 +1,9 @@
 "use client";
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import categories from "./hubData";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
+import { supabase } from "../lib/supabase";
 
 interface Hub {
   id: string;
@@ -79,12 +80,47 @@ interface DiscoverPageProps {
 
 export default function DiscoverPage({ onSelectCategory }: DiscoverPageProps) {
   const { userId, sessionId } = useAnalytics();
+  const [allowedSlugs, setAllowedSlugs] = useState<Set<string> | null>(null);
+  const [hobbiesLoading, setHobbiesLoading] = useState(true);
+  const [hobbiesError, setHobbiesError] = useState<string | null>(null);
   const dwellRef = useContentImpression({
     userId,
     sessionId,
     uiLocation: "discover",
     metadata: { kind: "discover_root_dwell" },
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadHobbies = async () => {
+      setHobbiesLoading(true);
+      setHobbiesError(null);
+      try {
+        const { data, error } = await supabase
+          .from("hobbies")
+          .select("slug");
+
+        if (cancelled) return;
+        if (error) {
+          if (process.env.NODE_ENV === "development") {
+            console.warn("[discover] hobbies load failed", error);
+          }
+          setAllowedSlugs(null);
+          setHobbiesError(error.message);
+          return;
+        }
+        const slugs = new Set((data ?? []).map((r) => String(r.slug)).filter(Boolean));
+        setAllowedSlugs(slugs);
+      } finally {
+        if (!cancelled) setHobbiesLoading(false);
+      }
+    };
+
+    void loadHobbies();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     void logContentEvent({
@@ -96,6 +132,13 @@ export default function DiscoverPage({ onSelectCategory }: DiscoverPageProps) {
     });
   }, [userId, sessionId]);
 
+  const visibleCategories = useMemo(() => {
+    if (hobbiesLoading) return [];
+    if (!allowedSlugs) return categories;
+    const filtered = categories.filter((c) => allowedSlugs.has(c.id));
+    return filtered.length > 0 ? filtered : categories;
+  }, [allowedSlugs, hobbiesLoading]);
+
   return (
     <div ref={dwellRef} className="max-w-4xl mx-auto px-6 py-8">
       <h1
@@ -105,8 +148,21 @@ export default function DiscoverPage({ onSelectCategory }: DiscoverPageProps) {
         Discover new hubs
       </h1>
 
+      {hobbiesError && (
+        <p className="text-xs mb-4" style={{ color: "#f87171" }}>
+          {hobbiesError}
+        </p>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {categories.map((cat) => (
+        {hobbiesLoading && (
+          <div className="md:col-span-2">
+            <p className="text-xs text-center py-6" style={{ color: "var(--text-muted)" }}>
+              Loading hobbies…
+            </p>
+          </div>
+        )}
+        {visibleCategories.map((cat) => (
           <HubCard
             key={cat.id}
             hub={cat}
