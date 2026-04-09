@@ -1,8 +1,9 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { getHubById, getCategoryById, type HubItem } from "./hubData";
+import { getHubById, getCategoryById, type HubDetail, type HubItem } from "./hubData";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
+import { fetchHubBySlug, hubRowToDetail } from "../lib/hubDb";
 
 /* ------------------------------------------------------------------ */
 /*  Icons                                                              */
@@ -27,7 +28,7 @@ function ArrowRightIcon() {
 /* ------------------------------------------------------------------ */
 /*  Item card (right side-bar)                                         */
 /* ------------------------------------------------------------------ */
-function ItemCard({ item, onClick }: { item: HubItem; onClick?: () => void }) {
+function ItemCard({ item, onClick }: { item: { name: string; year: string; rating: string }; onClick?: () => void }) {
     return (
         <div
             onClick={onClick}
@@ -81,14 +82,41 @@ interface HubPageProps {
 export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: HubPageProps) {
     const { userId, sessionId } = useAnalytics();
     const [activeTab, setActiveTab] = useState<"recent" | "popular">("recent");
+    const [dbHub, setDbHub] = useState<HubDetail | null>(null);
+    const [hubLoading, setHubLoading] = useState(true);
 
+    const mockHub = getHubById(categoryId, hubId);
     const category = getCategoryById(categoryId);
-    const hub = getHubById(categoryId, hubId);
+
+    useEffect(() => {
+        let cancelled = false;
+        const load = async () => {
+            setHubLoading(true);
+            const row = await fetchHubBySlug(hubId);
+            const mock = getHubById(categoryId, hubId);
+            if (cancelled) return;
+            if (row) {
+                const items: HubItem[] = mock?.items ?? [];
+                setDbHub(hubRowToDetail(row, items));
+            } else {
+                setDbHub(null);
+            }
+            setHubLoading(false);
+        };
+        void load();
+        return () => {
+            cancelled = true;
+        };
+    }, [categoryId, hubId]);
+
+    const hub = dbHub ?? mockHub;
+    const categoryName = category?.name ?? categoryId;
+
     const dwellRef = useContentImpression({
         userId,
         sessionId,
         uiLocation: "hub",
-        enabled: Boolean(hub && category),
+        enabled: Boolean(hub),
         metadata: {
             kind: "hub_dwell",
             category_id: categoryId,
@@ -98,9 +126,8 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
     });
 
     useEffect(() => {
-        const cat = getCategoryById(categoryId);
-        const h = getHubById(categoryId, hubId);
-        if (!h || !cat) return;
+        const h = hub;
+        if (!h) return;
         void logContentEvent({
             userId,
             sessionId,
@@ -113,12 +140,22 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                 hub_name: h.name,
             },
         });
-    }, [userId, sessionId, categoryId, hubId]);
+    }, [userId, sessionId, categoryId, hubId, hub]);
 
-    if (!hub || !category) {
+    if (!hubLoading && !hub) {
         return (
             <div className="max-w-5xl mx-auto px-6 py-8">
                 <p style={{ color: "var(--text-muted)" }}>Hub not found.</p>
+            </div>
+        );
+    }
+
+    if (hubLoading || !hub) {
+        return (
+            <div className="max-w-5xl mx-auto px-6 py-8">
+                <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                    Loading hub…
+                </p>
             </div>
         );
     }
@@ -146,7 +183,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                 style={{ color: "#a78bfa" }}
             >
                 <BackIcon />
-                <span>{category.name}</span>
+                <span>{categoryName}</span>
             </button>
 
             {/* ── Hub banner ────────────────────────────────────────────── */}
@@ -298,28 +335,34 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                         Items
                     </h2>
                     <div className="space-y-3">
-                        {hub.items.map((item, i) => (
-                            <ItemCard
-                                key={i}
-                                item={item}
-                                onClick={() => {
-                                    void logContentEvent({
-                                        userId,
-                                        sessionId,
-                                        eventType: "click",
-                                        uiLocation: "hub",
-                                        metadata: {
-                                            action: "open_item",
-                                            category_id: categoryId,
-                                            hub_id: hubId,
-                                            item_index: i,
-                                            item_name: item.name,
-                                        },
-                                    });
-                                    onSelectItem?.(i);
-                                }}
-                            />
-                        ))}
+                        {hub.items.length === 0 ? (
+                            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                                No featured items yet.
+                            </p>
+                        ) : (
+                            hub.items.map((item, i) => (
+                                <ItemCard
+                                    key={i}
+                                    item={item}
+                                    onClick={() => {
+                                        void logContentEvent({
+                                            userId,
+                                            sessionId,
+                                            eventType: "click",
+                                            uiLocation: "hub",
+                                            metadata: {
+                                                action: "open_item",
+                                                category_id: categoryId,
+                                                hub_id: hubId,
+                                                item_index: i,
+                                                item_name: item.name,
+                                            },
+                                        });
+                                        onSelectItem?.(i);
+                                    }}
+                                />
+                            ))
+                        )}
                     </div>
                 </div>
             </div>

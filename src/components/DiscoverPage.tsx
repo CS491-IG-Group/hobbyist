@@ -22,42 +22,50 @@ function ArrowIcon() {
   );
 }
 
+/* Fixed height so every card and every grid row matches (md+ two columns). */
+const HOBBY_CARD_H_PX = 200;
+
 function HubCard({ hub, onClick }: { hub: Hub; onClick: () => void }) {
   return (
     <div
       onClick={onClick}
-      className="flex rounded-2xl overflow-hidden transition-all duration-200 hover:scale-[1.02] hover:shadow-lg cursor-pointer group"
+      className="flex w-full rounded-2xl overflow-hidden transition-all duration-200 hover:scale-[1.02] hover:shadow-lg cursor-pointer group shrink-0"
       style={{
         background: "var(--surface)",
         border: "1px solid var(--border)",
+        height: HOBBY_CARD_H_PX,
+        minHeight: HOBBY_CARD_H_PX,
+        maxHeight: HOBBY_CARD_H_PX,
       }}
     >
       {/* Banner image area */}
       <div
-        className="w-[140px] shrink-0 flex items-center justify-center text-3xl"
+        className="w-[140px] shrink-0 h-full flex items-center justify-center text-3xl"
         style={{
           background: `linear-gradient(135deg, ${hub.gradientFrom} 0%, ${hub.gradientTo} 100%)`,
-          minHeight: "140px",
         }}
       >
         <span className="text-4xl drop-shadow-lg">{hub.emoji}</span>
       </div>
 
       {/* Info area */}
-      <div className="flex-1 flex flex-col justify-between p-4 min-w-0">
-        <div>
+      <div className="flex-1 flex flex-col justify-between p-4 min-w-0 min-h-0 h-full overflow-hidden">
+        <div className="min-h-0 overflow-hidden">
           <h3
-            className="text-base font-bold mb-1"
+            className="text-base font-bold mb-1 line-clamp-2 leading-tight"
             style={{ fontFamily: "Syne, sans-serif", color: "var(--text)" }}
           >
             {hub.name}
           </h3>
-          <p className="text-sm leading-relaxed" style={{ color: "var(--text-dim)" }}>
+          <p
+            className="text-sm leading-snug line-clamp-3"
+            style={{ color: "var(--text-dim)" }}
+          >
             {hub.description}
           </p>
         </div>
 
-        <div className="flex justify-end mt-3">
+        <div className="flex justify-end mt-2 shrink-0">
           <div
             className="w-8 h-8 rounded-full flex items-center justify-center transition-all group-hover:scale-110"
             style={{
@@ -214,7 +222,10 @@ export default function DiscoverPage({ onSelectCategory }: DiscoverPageProps) {
         </p>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div
+        className="grid grid-cols-1 md:grid-cols-2 gap-4"
+        style={{ gridAutoRows: `${HOBBY_CARD_H_PX}px` }}
+      >
         {hobbiesLoading && (
           <div className="md:col-span-2">
             <p className="text-xs text-center py-6" style={{ color: "var(--text-muted)" }}>
