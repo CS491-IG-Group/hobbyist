@@ -1,7 +1,8 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
+import { supabase } from "../lib/supabase";
 
 interface Props {
   onBack: () => void;
@@ -72,8 +73,14 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 // ─── Account Settings Page ────────────────────────────────────────────────────
+type HobbyRow = { id: number; name: string; slug: string };
+
 export default function AccountSettingsPage({ onBack, displayName, handle, email }: Props) {
   const { userId, sessionId } = useAnalytics();
+  const [hobbies, setHobbies] = useState<HobbyRow[]>([]);
+  const [selectedHobbyIds, setSelectedHobbyIds] = useState<Set<number>>(new Set());
+  const [hobbiesLoading, setHobbiesLoading] = useState(true);
+  const [hobbySaveError, setHobbySaveError] = useState<string | null>(null);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -124,6 +131,87 @@ export default function AccountSettingsPage({ onBack, displayName, handle, email
     });
   }, [userId, sessionId]);
 
+  useEffect(() => {
+    if (!userId) {
+      setHobbies([]);
+      setSelectedHobbyIds(new Set());
+      setHobbiesLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setHobbiesLoading(true);
+    void (async () => {
+      const [allRes, mineRes] = await Promise.all([
+        supabase.from("hobbies").select("id,name,slug").order("name"),
+        supabase.from("user_hobbies").select("hobby_id").eq("user_id", userId),
+      ]);
+      if (cancelled) return;
+      if (allRes.error) {
+        if (process.env.NODE_ENV === "development") {
+          console.warn("[account_settings] hobbies:", allRes.error.message);
+        }
+        setHobbies([]);
+      } else {
+        setHobbies((allRes.data ?? []) as HobbyRow[]);
+      }
+      if (!mineRes.error && mineRes.data) {
+        setSelectedHobbyIds(new Set(mineRes.data.map((r: { hobby_id: number }) => r.hobby_id)));
+      } else {
+        setSelectedHobbyIds(new Set());
+      }
+      setHobbiesLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  const toggleHobby = useCallback(
+    async (hobbyId: number) => {
+      if (!userId) return;
+      setHobbySaveError(null);
+      const wasOn = selectedHobbyIds.has(hobbyId);
+      if (wasOn) {
+        const { error } = await supabase
+          .from("user_hobbies")
+          .delete()
+          .eq("user_id", userId)
+          .eq("hobby_id", hobbyId);
+        if (error) {
+          setHobbySaveError(error.message);
+          return;
+        }
+        setSelectedHobbyIds((prev) => {
+          const n = new Set(prev);
+          n.delete(hobbyId);
+          return n;
+        });
+        void logContentEvent({
+          userId,
+          sessionId,
+          eventType: "click",
+          uiLocation: "account_settings",
+          metadata: { action: "toggle_feed_hobby", hobby_id: hobbyId, selected: false },
+        });
+      } else {
+        const { error } = await supabase.from("user_hobbies").insert({ user_id: userId, hobby_id: hobbyId });
+        if (error) {
+          setHobbySaveError(error.message);
+          return;
+        }
+        setSelectedHobbyIds((prev) => new Set(prev).add(hobbyId));
+        void logContentEvent({
+          userId,
+          sessionId,
+          eventType: "click",
+          uiLocation: "account_settings",
+          metadata: { action: "toggle_feed_hobby", hobby_id: hobbyId, selected: true },
+        });
+      }
+    },
+    [userId, sessionId, selectedHobbyIds]
+  );
+
   return (
     <div ref={settingsDwellRef} className="flex-1 overflow-y-auto" style={{ background: "var(--bg)" }}>
       <div className="max-w-2xl mx-auto px-6 py-8">
@@ -154,6 +242,60 @@ export default function AccountSettingsPage({ onBack, displayName, handle, email
           >
             Account Settings
           </h1>
+        </div>
+
+        {/* ───────── Feed interests (user_hobbies → timeline ranking) ───────── */}
+        <div
+          className="rounded-2xl p-6 mb-5"
+          style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+        >
+          <SectionHeader
+            title="Feed interests"
+            icon={
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+              </svg>
+            }
+          />
+          <p className="text-xs mb-4 leading-relaxed" style={{ color: "var(--text-muted)" }}>
+            Topics you pick here get a boost in your &quot;For you&quot; timeline (alongside your likes and joined hubs).
+            No AI required — stored in <code className="text-[10px]">user_hobbies</code>.
+          </p>
+          {hobbySaveError && (
+            <p className="text-xs mb-3" style={{ color: "#f87171" }}>
+              {hobbySaveError}
+            </p>
+          )}
+          {hobbiesLoading ? (
+            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+              Loading interests…
+            </p>
+          ) : hobbies.length === 0 ? (
+            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+              No hobbies found. Apply Supabase migrations (including <code className="text-[10px]">zz_seed_hobbies</code>), then refresh.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {hobbies.map((h) => {
+                const on = selectedHobbyIds.has(h.id);
+                return (
+                  <button
+                    key={h.id}
+                    type="button"
+                    onClick={() => void toggleHobby(h.id)}
+                    className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
+                    style={{
+                      background: on ? "var(--gradient-btn)" : "var(--surface2)",
+                      color: on ? "#fff" : "var(--text-muted)",
+                      border: `1px solid ${on ? "transparent" : "var(--border)"}`,
+                    }}
+                  >
+                    {h.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* ───────── Change Password ───────── */}
