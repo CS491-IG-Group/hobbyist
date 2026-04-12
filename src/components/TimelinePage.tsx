@@ -125,12 +125,19 @@ const POSTS_RAW = [
 
 const POSTS = POSTS_RAW.map((p) => {
     const { postTags, ...rest } = p;
+    const userTags = [...postTags].map(normalizeTag).filter(Boolean);
     return {
         ...rest,
         hobbySlug: hubNameToHobbySlug(rest.hub),
-        tags: mergePostTags(rest.hub, [...postTags]),
+        /** Full set for ranking / analytics (hub defaults + hobby + extras). */
+        tags: mergePostTags(rest.hub, userTags),
+        /** Shown under the card — author-added only (no synthetic hub defaults). */
+        userTags,
     };
 });
+
+const MAX_EXTRA_TAGS = 8;
+const MAX_TAG_LEN = 32;
 
 const HUB_COLORS: Record<string, string> = {
     Cars: "#3b82f6", Fitness: "#10b981", Technology: "#f59e0b",
@@ -350,9 +357,9 @@ function PostCard({ post, heightClass }: PostCardProps) {
                     </p>
                 )}
 
-                {post.tags.length > 0 && (
+                {post.userTags.length > 0 && (
                     <div className="flex flex-wrap gap-1 mb-2">
-                        {post.tags.slice(0, 5).map((t) => (
+                        {post.userTags.slice(0, MAX_EXTRA_TAGS).map((t) => (
                             <span
                                 key={t}
                                 className="text-[9px] font-medium px-1.5 py-0.5 rounded-md"
@@ -411,9 +418,6 @@ function PostCard({ post, heightClass }: PostCardProps) {
         </div>
     );
 }
-
-const MAX_EXTRA_TAGS = 8;
-const MAX_TAG_LEN = 32;
 
 function CreatePostModal({ onClose, onPost, hubs }: {
     onClose: () => void;
@@ -701,6 +705,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                     hobbyId: hobbyId ?? null,
                     hobbySlug: resolvedHobbySlug,
                     tags: mergePostTags(displayHub, storedExtras, hobbySlugFromDb),
+                    userTags: storedExtras,
                     hubColor,
                     time: formatTimeAgo(post.created_at),
                     text: post.body,
@@ -797,6 +802,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
             hobbyId,
             hobbySlug,
             tags: mergePostTags(hub, normalizedExtras, row?.hobby_slug ?? null),
+            userTags: normalizedExtras,
             hubColor: row?.gradient_from ?? HUB_COLORS[hub] ?? "#8b5cf6",
             time: "Just now",
             text,
