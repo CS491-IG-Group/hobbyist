@@ -1,9 +1,11 @@
 "use client";
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import HubPage from "./HubsProfile";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
 import { fetchRecommendationContext, rankTimelinePosts, type UserAffinity } from "../lib/recommendations";
+import { supabase } from "../lib/supabase";
+import { fetchAllHubs, type HubRow } from "../lib/hubDb";
 import { hubNameToHobbySlug } from "../lib/hubHobbyMap";
 import { mergePostTags, normalizeTag } from "../lib/hubTags";
 
@@ -130,10 +132,6 @@ const POSTS = POSTS_RAW.map((p) => {
     };
 });
 
-const FILTERS = ["All", "Cars", "Fitness", "Technology", "Movies", "Photography", "Cooking"];
-
-const HUBS_LIST = ["Cars", "Fitness", "Technology", "Movies", "Photography", "Cooking", "Gaming"];
-
 const HUB_COLORS: Record<string, string> = {
     Cars: "#3b82f6", Fitness: "#10b981", Technology: "#f59e0b",
     Movies: "#ec4899", Photography: "#6366f1", Cooking: "#ef4444", Gaming: "#8b5cf6",
@@ -158,8 +156,10 @@ function CommentIcon() {
 // Assign a random-ish height class per post so masonry looks varied
 const HEIGHT_CLASSES = ["h-48", "h-56", "h-64", "h-72", "h-52", "h-60"];
 
+type TimelinePost = typeof POSTS[0] & { hobbyId?: number | null };
+
 interface PostCardProps {
-    post: typeof POSTS[0];
+    post: TimelinePost;
     heightClass: string;
 }
 
@@ -415,9 +415,10 @@ function PostCard({ post, heightClass }: PostCardProps) {
 const MAX_EXTRA_TAGS = 8;
 const MAX_TAG_LEN = 32;
 
-function CreatePostModal({ onClose, onPost }: {
+function CreatePostModal({ onClose, onPost, hubs }: {
     onClose: () => void;
     onPost: (text: string, hub: string, extraTags: string[]) => void;
+    hubs: HubRow[];
 }) {
     const { userId, sessionId } = useAnalytics();
     const [text, setText] = React.useState("");
@@ -509,16 +510,16 @@ function CreatePostModal({ onClose, onPost }: {
                     <div className="mb-5">
                         <p className="text-xs font-semibold mb-2" style={{ color: "var(--text-muted)" }}>Post to hub</p>
                         <div className="flex flex-wrap gap-2">
-                            {HUBS_LIST.map(hub => (
-                                <button key={hub}
-                                    onClick={() => setSelectedHub(selectedHub === hub ? "" : hub)}
+                            {hubs.map(hub => (
+                                <button key={hub.slug}
+                                    onClick={() => setSelectedHub(selectedHub === hub.name ? "" : hub.name)}
                                     className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
                                     style={{
-                                        background: selectedHub === hub ? "var(--gradient-btn)" : "var(--surface2)",
-                                        color: selectedHub === hub ? "#fff" : "var(--text-muted)",
-                                        border: `1px solid ${selectedHub === hub ? "transparent" : "var(--border)"}`,
+                                        background: selectedHub === hub.name ? "var(--gradient-btn)" : "var(--surface2)",
+                                        color: selectedHub === hub.name ? "#fff" : "var(--text-muted)",
+                                        border: `1px solid ${selectedHub === hub.name ? "transparent" : "var(--border)"}`,
                                     }}>
-                                    {hub}
+                                    {hub.name}
                                 </button>
                             ))}
                         </div>
@@ -638,6 +639,81 @@ interface TimelinePageProps {
 }
 
 export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageProps) {
+    const formatTimeAgo = (dateString: string) => {
+        const now = new Date();
+        const then = new Date(dateString);
+        const diffMs = now.getTime() - then.getTime();
+
+        const minutes = Math.floor(diffMs / (1000 * 60));
+        const hours = Math.floor(diffMs / (1000 * 60 * 60));
+        const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+        if (minutes < 1) return "Just now";
+        if (minutes < 60) return `${minutes}m ago`;
+        if (hours < 24) return `${hours}h ago`;
+        return `${days}d ago`;
+    };
+
+    const loadPosts = useCallback(async (hubRowsForColor: HubRow[]) => {
+        try {
+            setLoadingPosts(true);
+
+            const { data, error } = await supabase
+                .from("posts")
+                .select(`
+                    id,
+                    body,
+                    created_at,
+                    hobby_id,
+                    extra_tags,
+                    hobbies (name)
+                `)
+                .order("created_at", { ascending: false });
+
+            if (error) {
+                console.error("Error loading posts:", error.message);
+                return;
+            }
+
+            const mapped = (data || []).map((post: any) => {
+                const hubName = post.hobbies?.name || "Unknown";
+                const hobbyId = post.hobby_id as number | null | undefined;
+                const hubRow = hubRowsForColor.find(h => h.hobby_id === hobbyId);
+                const hubColor = hubRow?.gradient_from ?? HUB_COLORS[hubName] ?? "#8b5cf6";
+                const storedExtras = Array.isArray(post.extra_tags)
+                    ? (post.extra_tags as string[]).map(t => normalizeTag(String(t))).filter(Boolean)
+                    : [];
+
+                return {
+                    id: post.id,
+                    user: "You",
+                    handle: "@you",
+                    avatar: "✨",
+                    avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
+                    hub: hubName,
+                    hobbyId: hobbyId ?? null,
+                    hobbySlug: hubNameToHobbySlug(hubName),
+                    tags: mergePostTags(hubName, storedExtras),
+                    hubColor,
+                    time: formatTimeAgo(post.created_at),
+                    text: post.body,
+                    image: null,
+                    likes: 0,
+                    comments: 0,
+                    reposts: 0,
+                };
+            });
+
+            setPosts(mapped);
+        } catch (err) {
+            console.error("Load posts error:", err);
+        } finally {
+            setLoadingPosts(false);
+        }
+    }, []);
+
+
+
     const { userId, sessionId } = useAnalytics();
     const timelineDwellRef = useContentImpression({
         userId,
@@ -648,23 +724,72 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
     const [activeFilter, setActiveFilter] = useState("All");
     const [showCompose, setShowCompose] = useState(false);
     const [activeHub, setActiveHub] = useState<string | null>(null);
-    const [posts, setPosts] = useState(POSTS);
+    const [posts, setPosts] = useState<TimelinePost[]>([]);
+    const [hubRows, setHubRows] = useState<HubRow[]>([]);
+    const [loadingPosts, setLoadingPosts] = useState(true);
     const [affinity, setAffinity] = useState<UserAffinity | null>(null);
     const [profileHobbySlugs, setProfileHobbySlugs] = useState<string[]>([]);
     const [affinityReady, setAffinityReady] = useState(false);
 
-    const handleNewPost = (text: string, hub: string, extraTags: string[] = []) => {
+    // ── Saves post to Supabase (with optional extra_tags) then updates local feed ──
+    const handleNewPost = async (text: string, hub: string, extraTags: string[] = []) => {
         const normalizedExtras = [...new Set(extraTags.map(t => normalizeTag(t)).filter(Boolean))].slice(0, MAX_EXTRA_TAGS);
-        const newPost: typeof POSTS[0] = {
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+
+            if (user) {
+                const { data: hubRow } = await supabase
+                    .from("hubs")
+                    .select("hobby_id")
+                    .eq("name", hub)
+                    .maybeSingle();
+
+                let hobbyId: number | null = hubRow?.hobby_id ?? null;
+                if (hobbyId == null) {
+                    const { data: hobby } = await supabase
+                        .from("hobbies")
+                        .select("id")
+                        .eq("name", hub)
+                        .maybeSingle();
+                    hobbyId = hobby?.id ?? null;
+                }
+
+                if (hobbyId == null) {
+                    console.error("[handleNewPost] Could not resolve hobby_id for hub:", hub);
+                } else {
+                    const { error } = await supabase.from("posts").insert({
+                        user_id: user.id,
+                        body: text,
+                        hobby_id: hobbyId,
+                        post_type: "text",
+                        extra_tags: normalizedExtras.length ? normalizedExtras : [],
+                    });
+
+                    if (error) {
+                        console.error("[handleNewPost] Supabase insert failed:", error.message);
+                    }
+                }
+            } else {
+                console.warn("[handleNewPost] No authenticated user found — post not saved to Supabase.");
+            }
+        } catch (err) {
+            console.error("[handleNewPost] Unexpected error:", err);
+        }
+
+        const row = hubRows.find(h => h.name === hub);
+        const hobbyId = row?.hobby_id ?? null;
+
+        const newPost: TimelinePost = {
             id: Date.now(),
             user: "You",
             handle: "@you",
             avatar: "✨",
             avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
             hub,
+            hobbyId,
             hobbySlug: hubNameToHobbySlug(hub),
             tags: mergePostTags(hub, normalizedExtras),
-            hubColor: HUB_COLORS[hub] || "#8b5cf6",
+            hubColor: row?.gradient_from ?? HUB_COLORS[hub] ?? "#8b5cf6",
             time: "Just now",
             text,
             image: null,
@@ -675,12 +800,46 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
         setPosts(prev => [newPost, ...prev]);
     };
 
-    const filtered = activeFilter === "All" ? posts : posts.filter(p => p.hub === activeFilter);
+    const filterHubPills = useMemo(() => ["All", ...hubRows.map(h => h.name)], [hubRows]);
+
+    const filtered = useMemo(() => {
+        if (activeFilter === "All") return posts;
+        const row = hubRows.find(h => h.name === activeFilter);
+        if (row?.hobby_id != null) {
+            return posts.filter(p => p.hobbyId === row.hobby_id);
+        }
+        return posts.filter(p => p.hub === activeFilter);
+    }, [posts, activeFilter, hubRows]);
 
     const feedPosts = useMemo(() => {
         if (!affinityReady) return filtered;
         return rankTimelinePosts(filtered, affinity, joinedHubs, profileHobbySlugs);
     }, [filtered, affinity, affinityReady, joinedHubs, profileHobbySlugs]);
+
+    useEffect(() => {
+        if (!userId) return;
+
+        let cancelled = false;
+        void (async () => {
+            const rows = await fetchAllHubs();
+            if (!cancelled) setHubRows(rows);
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [userId]);
+
+    useEffect(() => {
+        if (!userId) return;
+
+        void loadPosts(hubRows);
+    }, [userId, hubRows, loadPosts]);
+
+    useEffect(() => {
+        const valid = new Set(filterHubPills);
+        if (!valid.has(activeFilter)) setActiveFilter("All");
+    }, [filterHubPills, activeFilter]);
 
     useEffect(() => {
         if (!userId) {
@@ -689,6 +848,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
             setAffinityReady(false);
             return;
         }
+
         let cancelled = false;
         setAffinityReady(false);
         void (async () => {
@@ -760,7 +920,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
 
                     {/* Filter pills */}
                     <div className="flex gap-2 overflow-x-auto pb-3 mb-6 scrollbar-hide">
-                        {FILTERS.map(f => (
+                        {filterHubPills.map(f => (
                             <button key={f} onClick={() => {
                                 void logContentEvent({
                                     userId,
@@ -962,7 +1122,8 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
             {showCompose && (
                 <CreatePostModal
                     onClose={() => setShowCompose(false)}
-                    onPost={handleNewPost}
+                    onPost={(text, hub, tags) => void handleNewPost(text, hub, tags)}
+                    hubs={hubRows}
                 />
             )}
         </div>

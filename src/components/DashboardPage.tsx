@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import Sidebar from "./Sidebar";
 import DiscoverPage from "./DiscoverPage";
 import CategoryPage from "./CategoryPage";
@@ -22,6 +22,15 @@ type SubPage =
 
 interface Props {
   onLogout: () => void;
+}
+
+/** One row in the profile sidebar: `user_goals` joined to `goals`. */
+interface GoalRow {
+  userGoalId: string;
+  goalId: string;
+  label: string;
+  current: number;
+  total: number;
 }
 
 // ─── Goal Card ────────────────────────────────────────────────────────────────
@@ -242,25 +251,166 @@ export default function DashboardPage({ onLogout }: Props) {
   const toggleJoinHub = (hubName: string) =>
     setJoinedHubs(prev => prev.includes(hubName) ? prev.filter(h => h !== hubName) : [...prev, hubName]);
 
-  // Goals
-  const [goals, setGoals] = useState([
-    { id: 1, label: "Run 5km three times a week", current: 2, total: 3 },
-    { id: 2, label: "Read 12 books this year", current: 4, total: 12 },
-    { id: 3, label: "Cook a new recipe every week", current: 6, total: 8 },
-  ]);
+  // Goals (Supabase: `goals` + `user_goals`)
+  const [goals, setGoals] = useState<GoalRow[]>([]);
+  const [goalsLoading, setGoalsLoading] = useState(false);
+  const [goalsError, setGoalsError] = useState<string | null>(null);
   const [showNewGoal, setShowNewGoal] = useState(false);
 
-  const incrementGoal = (id: number) =>
-    setGoals(prev => prev.map(g => g.id === id && g.current < g.total ? { ...g, current: g.current + 1 } : g));
-  const decrementGoal = (id: number) =>
-    setGoals(prev => prev.map(g => g.id === id && g.current > 0 ? { ...g, current: g.current - 1 } : g));
-  const deleteGoal = (id: number) =>
-    setGoals(prev => prev.filter(g => g.id !== id));
-  const renameGoal = (id: number, newLabel: string) =>
-    setGoals(prev => prev.map(g => g.id === id ? { ...g, label: newLabel } : g));
-  const addGoal = (label: string, current: number, total: number) => {
-    setGoals(prev => [...prev, { id: Date.now(), label, current, total }]);
+  const loadGoals = useCallback(async () => {
+    if (!userId) {
+      setGoals([]);
+      return;
+    }
+    setGoalsLoading(true);
+    setGoalsError(null);
+    const { data, error } = await supabase
+      .from("user_goals")
+      .select(`
+        id,
+        current_value,
+        goals (
+          id,
+          title,
+          target_value
+        )
+      `)
+      .eq("user_id", userId)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[goals] load failed", error);
+      }
+      setGoalsError(error.message);
+      setGoals([]);
+      setGoalsLoading(false);
+      return;
+    }
+
+    const mapped: GoalRow[] = [];
+    for (const row of data ?? []) {
+      const g = row.goals;
+      if (!g || typeof g !== "object" || Array.isArray(g)) continue;
+      const goal = g as { id: string; title: string; target_value: number | null };
+      const total = Math.max(1, Number(goal.target_value) || 1);
+      const raw = Number(row.current_value) || 0;
+      const current = Math.min(Math.max(0, raw), total);
+      mapped.push({
+        userGoalId: row.id,
+        goalId: goal.id,
+        label: goal.title,
+        current,
+        total,
+      });
+    }
+    setGoals(mapped);
+    setGoalsLoading(false);
+  }, [userId]);
+
+  useEffect(() => {
+    void loadGoals();
+  }, [loadGoals]);
+
+  const incrementGoal = async (g: GoalRow) => {
+    if (!userId || g.current >= g.total) return;
+    const next = g.current + 1;
+    const { error } = await supabase
+      .from("user_goals")
+      .update({ current_value: next, updated_at: new Date().toISOString() })
+      .eq("id", g.userGoalId)
+      .eq("user_id", userId);
+    if (error) {
+      if (process.env.NODE_ENV === "development") console.warn("[goals] increment", error);
+      setGoalsError(error.message);
+      return;
+    }
+    setGoalsError(null);
+    setGoals((prev) =>
+      prev.map((row) => (row.userGoalId === g.userGoalId ? { ...row, current: next } : row))
+    );
+  };
+
+  const decrementGoal = async (g: GoalRow) => {
+    if (!userId || g.current <= 0) return;
+    const next = g.current - 1;
+    const { error } = await supabase
+      .from("user_goals")
+      .update({ current_value: next, updated_at: new Date().toISOString() })
+      .eq("id", g.userGoalId)
+      .eq("user_id", userId);
+    if (error) {
+      if (process.env.NODE_ENV === "development") console.warn("[goals] decrement", error);
+      setGoalsError(error.message);
+      return;
+    }
+    setGoalsError(null);
+    setGoals((prev) =>
+      prev.map((row) => (row.userGoalId === g.userGoalId ? { ...row, current: next } : row))
+    );
+  };
+
+  const deleteGoal = async (g: GoalRow) => {
+    if (!userId) return;
+    const { error } = await supabase
+      .from("goals")
+      .delete()
+      .eq("id", g.goalId)
+      .eq("owner_user_id", userId);
+    if (error) {
+      if (process.env.NODE_ENV === "development") console.warn("[goals] delete", error);
+      setGoalsError(error.message);
+      return;
+    }
+    setGoalsError(null);
+    setGoals((prev) => prev.filter((row) => row.goalId !== g.goalId));
+  };
+
+  const renameGoal = async (g: GoalRow, newLabel: string) => {
+    if (!userId) return;
+    const { error } = await supabase
+      .from("goals")
+      .update({ title: newLabel })
+      .eq("id", g.goalId)
+      .eq("owner_user_id", userId);
+    if (error) {
+      if (process.env.NODE_ENV === "development") console.warn("[goals] rename", error);
+      setGoalsError(error.message);
+      return;
+    }
+    setGoalsError(null);
+    setGoals((prev) =>
+      prev.map((row) => (row.goalId === g.goalId ? { ...row, label: newLabel } : row))
+    );
+  };
+
+  const addGoal = async (label: string, current: number, total: number) => {
+    if (!userId) return;
+    setGoalsError(null);
+    const { data: inserted, error: gErr } = await supabase
+      .from("goals")
+      .insert({ owner_user_id: userId, title: label, target_value: total })
+      .select("id")
+      .single();
+    if (gErr || !inserted) {
+      if (process.env.NODE_ENV === "development") console.warn("[goals] insert goal", gErr);
+      setGoalsError(gErr?.message ?? "Failed to create goal");
+      return;
+    }
+    const start = Math.min(Math.max(0, current), total);
+    const { error: ugErr } = await supabase.from("user_goals").insert({
+      user_id: userId,
+      goal_id: inserted.id,
+      current_value: start,
+    });
+    if (ugErr) {
+      if (process.env.NODE_ENV === "development") console.warn("[goals] insert user_goals", ugErr);
+      setGoalsError(ugErr.message);
+      await supabase.from("goals").delete().eq("id", inserted.id).eq("owner_user_id", userId);
+      return;
+    }
     setShowNewGoal(false);
+    await loadGoals();
   };
 
   // Lists
@@ -376,16 +526,22 @@ export default function DashboardPage({ onLogout }: Props) {
                 style={{ background: "var(--gradient-btn)" }}>+</button>
             )}
           </div>
+          {goalsError && (
+            <p className="text-[10px] mb-2 leading-snug" style={{ color: "#f87171" }}>{goalsError}</p>
+          )}
           <div className="space-y-2">
             {showNewGoal && <NewGoalForm onAdd={addGoal} onCancel={() => setShowNewGoal(false)} />}
-            {goals.map(g => (
-              <GoalCard key={g.id} label={g.label} current={g.current} total={g.total}
-                onIncrement={() => incrementGoal(g.id)}
-                onDecrement={() => decrementGoal(g.id)}
-                onDelete={() => deleteGoal(g.id)}
-                onRename={(newLabel) => renameGoal(g.id, newLabel)} />
+            {goalsLoading && !showNewGoal && (
+              <p className="text-xs text-center py-3" style={{ color: "var(--text-muted)" }}>Loading goals…</p>
+            )}
+            {!goalsLoading && goals.map((g) => (
+              <GoalCard key={g.userGoalId} label={g.label} current={g.current} total={g.total}
+                onIncrement={() => void incrementGoal(g)}
+                onDecrement={() => void decrementGoal(g)}
+                onDelete={() => void deleteGoal(g)}
+                onRename={(newLabel) => void renameGoal(g, newLabel)} />
             ))}
-            {goals.length === 0 && !showNewGoal && (
+            {!goalsLoading && goals.length === 0 && !showNewGoal && (
               <p className="text-xs text-center py-4" style={{ color: "var(--text-muted)" }}>
                 No goals yet. Hit + to add one!
               </p>

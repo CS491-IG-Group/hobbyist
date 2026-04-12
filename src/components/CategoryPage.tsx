@@ -1,8 +1,10 @@
 "use client";
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { getCategoryById, type HubDetail } from "./hubData";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
+import { supabase } from "../lib/supabase";
+import { fetchHubsForHobbySlug, hubRowToDetail, type HubRow } from "../lib/hubDb";
 
 /* ------------------------------------------------------------------ */
 /*  Arrow icon (reused from DiscoverPage)                              */
@@ -87,6 +89,29 @@ function HubCard({
     );
 }
 
+function mergeHubList(
+    mockCategory: ReturnType<typeof getCategoryById>,
+    dbRows: HubRow[]
+): HubDetail[] {
+    const dbBySlug = new Map(dbRows.map((r) => [r.slug, r]));
+
+    if (mockCategory) {
+        const merged: HubDetail[] = mockCategory.hubs.map((h) => {
+            const row = dbBySlug.get(h.id);
+            if (row) return hubRowToDetail(row, h.items);
+            return h;
+        });
+        for (const row of dbRows) {
+            if (!mockCategory.hubs.some((h) => h.id === row.slug)) {
+                merged.push(hubRowToDetail(row, []));
+            }
+        }
+        return merged;
+    }
+
+    return dbRows.map((r) => hubRowToDetail(r, []));
+}
+
 /* ================================================================== */
 /*  CategoryPage                                                       */
 /* ================================================================== */
@@ -96,37 +121,173 @@ interface CategoryPageProps {
     onSelectHub: (hubId: string) => void;
 }
 
+type HobbyMeta = { name: string; desc: string | null };
+
 export default function CategoryPage({
     categoryId,
     onBack,
     onSelectHub,
 }: CategoryPageProps) {
     const { userId, sessionId } = useAnalytics();
-    const category = getCategoryById(categoryId);
+    const mockCategory = getCategoryById(categoryId);
+    const [dbHubRows, setDbHubRows] = useState<HubRow[]>([]);
+    const [hobbyMeta, setHobbyMeta] = useState<HobbyMeta | null>(null);
+    const [loading, setLoading] = useState(true);
+
+    const hubs = useMemo(() => mergeHubList(mockCategory, dbHubRows), [mockCategory, dbHubRows]);
+
     const dwellRef = useContentImpression({
         userId,
         sessionId,
         uiLocation: "category",
-        enabled: Boolean(category),
+        enabled: Boolean(mockCategory || hubs.length > 0 || hobbyMeta),
         metadata: { kind: "category_dwell", category_id: categoryId },
     });
 
     useEffect(() => {
-        const cat = getCategoryById(categoryId);
-        if (!cat) return;
+        let cancelled = false;
+        const load = async () => {
+            setLoading(true);
+            setDbHubRows([]);
+            const rows = await fetchHubsForHobbySlug(categoryId);
+            const { data: hobby } = await supabase.from("hobbies").select("name, desc").eq("slug", categoryId).maybeSingle();
+            if (!cancelled) {
+                setDbHubRows(rows);
+                if (hobby && typeof hobby === "object" && "name" in hobby) {
+                    const h = hobby as { name: string; desc?: string | null };
+                    setHobbyMeta({
+                        name: h.name,
+                        desc: h.desc ?? null,
+                    });
+                } else {
+                    setHobbyMeta(null);
+                }
+                setLoading(false);
+            }
+        };
+        void load();
+        return () => {
+            cancelled = true;
+        };
+    }, [categoryId]);
+
+    useEffect(() => {
+        const name =
+            mockCategory?.name ?? hobbyMeta?.name ?? categoryId;
         void logContentEvent({
             userId,
             sessionId,
             eventType: "view",
             uiLocation: "category",
-            metadata: { screen: "category", category_id: categoryId, category_name: cat.name },
+            metadata: { screen: "category", category_id: categoryId, category_name: name },
         });
-    }, [userId, sessionId, categoryId]);
+    }, [userId, sessionId, categoryId, mockCategory?.name, hobbyMeta?.name]);
 
-    if (!category) {
+    const title = mockCategory?.name ?? hobbyMeta?.name ?? categoryId;
+    const subtitle =
+        mockCategory?.description ?? hobbyMeta?.desc ?? "Browse hubs in this category.";
+    const emoji = mockCategory?.emoji ?? "✨";
+    const gradFrom = mockCategory?.gradientFrom ?? "#312e81";
+    const gradTo = mockCategory?.gradientTo ?? "#6366f1";
+
+    const showEmpty = !loading && hubs.length === 0;
+
+    if (showEmpty && !mockCategory && !hobbyMeta) {
         return (
             <div className="max-w-4xl mx-auto px-6 py-8">
-                <p style={{ color: "var(--text-muted)" }}>Category not found.</p>
+                <button
+                    onClick={() => {
+                        void logContentEvent({
+                            userId,
+                            sessionId,
+                            eventType: "click",
+                            uiLocation: "category",
+                            metadata: { action: "back_to_discover", from: "category", category_id: categoryId },
+                        });
+                        onBack();
+                    }}
+                    className="flex items-center gap-1 mb-6 text-sm font-medium transition-all hover:opacity-80"
+                    style={{ color: "#a78bfa" }}
+                >
+                    <BackIcon />
+                    <span>Discover</span>
+                </button>
+
+                <div className="flex items-center gap-3 mb-4">
+                    <div
+                        className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
+                        style={{
+                            background: "linear-gradient(135deg, #312e81 0%, #6366f1 100%)",
+                        }}
+                    >
+                        ✨
+                    </div>
+                    <div>
+                        <h1
+                            className="text-2xl font-bold"
+                            style={{ fontFamily: "Syne, sans-serif", color: "var(--text)" }}
+                        >
+                            {categoryId}
+                        </h1>
+                        <p className="text-sm" style={{ color: "var(--text-dim)" }}>
+                            No hubs found for this hobby yet.
+                        </p>
+                    </div>
+                </div>
+
+                <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                    Add hubs in Supabase for this hobby slug, or add this category to the local hub catalog.
+                </p>
+            </div>
+        );
+    }
+
+    if (showEmpty && (mockCategory || hobbyMeta)) {
+        return (
+            <div ref={dwellRef} className="max-w-4xl mx-auto px-6 py-8">
+                <button
+                    onClick={() => {
+                        void logContentEvent({
+                            userId,
+                            sessionId,
+                            eventType: "click",
+                            uiLocation: "category",
+                            metadata: { action: "back_to_discover", from: "category", category_id: categoryId },
+                        });
+                        onBack();
+                    }}
+                    className="flex items-center gap-1 mb-6 text-sm font-medium transition-all hover:opacity-80"
+                    style={{ color: "#a78bfa" }}
+                >
+                    <BackIcon />
+                    <span>Discover</span>
+                </button>
+
+                <div className="flex items-center gap-3 mb-6">
+                    <div
+                        className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
+                        style={{
+                            background: `linear-gradient(135deg, ${gradFrom} 0%, ${gradTo} 100%)`,
+                        }}
+                    >
+                        {emoji}
+                    </div>
+                    <div>
+                        <h1
+                            className="text-2xl font-bold"
+                            style={{ fontFamily: "Syne, sans-serif", color: "var(--text)" }}
+                        >
+                            {title}
+                        </h1>
+                        <p className="text-sm" style={{ color: "var(--text-dim)" }}>
+                            {subtitle}
+                        </p>
+                    </div>
+                </div>
+
+                <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                    No hubs in the database for this category yet.
+                </p>
             </div>
         );
     }
@@ -157,27 +318,33 @@ export default function CategoryPage({
                 <div
                     className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
                     style={{
-                        background: `linear-gradient(135deg, ${category.gradientFrom} 0%, ${category.gradientTo} 100%)`,
+                        background: `linear-gradient(135deg, ${gradFrom} 0%, ${gradTo} 100%)`,
                     }}
                 >
-                    {category.emoji}
+                    {emoji}
                 </div>
                 <div>
                     <h1
                         className="text-2xl font-bold"
                         style={{ fontFamily: "Syne, sans-serif", color: "var(--text)" }}
                     >
-                        {category.name}
+                        {title}
                     </h1>
                     <p className="text-sm" style={{ color: "var(--text-dim)" }}>
-                        {category.description}
+                        {subtitle}
                     </p>
                 </div>
             </div>
 
+            {loading && (
+                <p className="text-xs mb-4" style={{ color: "var(--text-muted)" }}>
+                    Loading hubs…
+                </p>
+            )}
+
             {/* Hub cards grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {category.hubs.map((hub) => (
+            <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${loading ? "opacity-50 pointer-events-none" : ""}`}>
+                {hubs.map((hub) => (
                     <HubCard
                         key={hub.id}
                         hub={hub}
