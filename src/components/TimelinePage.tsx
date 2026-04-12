@@ -5,7 +5,7 @@ import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
 import { fetchRecommendationContext, rankTimelinePosts, type UserAffinity } from "../lib/recommendations";
 import { hubNameToHobbySlug } from "../lib/hubHobbyMap";
-import { mergePostTags } from "../lib/hubTags";
+import { mergePostTags, normalizeTag } from "../lib/hubTags";
 
 function postAnalyticsMeta(
   post: { hub: string; handle: string; id: number; tags?: string[] },
@@ -412,14 +412,42 @@ function PostCard({ post, heightClass }: PostCardProps) {
     );
 }
 
+const MAX_EXTRA_TAGS = 8;
+const MAX_TAG_LEN = 32;
+
 function CreatePostModal({ onClose, onPost }: {
     onClose: () => void;
-    onPost: (text: string, hub: string) => void;
+    onPost: (text: string, hub: string, extraTags: string[]) => void;
 }) {
     const { userId, sessionId } = useAnalytics();
     const [text, setText] = React.useState("");
     const [selectedHub, setSelectedHub] = React.useState("");
+    const [extraTags, setExtraTags] = React.useState<string[]>([]);
+    const [tagInput, setTagInput] = React.useState("");
     const maxChars = 280;
+
+    const addTagsFromInput = () => {
+        const raw = tagInput.trim().replace(/^#+/, "");
+        if (!raw) return;
+        const parts = raw
+            .split(/[\s,]+/)
+            .map(s => normalizeTag(s.replace(/^#+/, "")))
+            .filter(t => t.length > 0 && t.length <= MAX_TAG_LEN);
+        if (parts.length === 0) return;
+        setExtraTags(prev => {
+            const next = [...prev];
+            for (const p of parts) {
+                if (next.length >= MAX_EXTRA_TAGS) break;
+                if (!next.includes(p)) next.push(p);
+            }
+            return next;
+        });
+        setTagInput("");
+    };
+
+    const removeTag = (t: string) => {
+        setExtraTags(prev => prev.filter(x => x !== t));
+    };
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -495,6 +523,61 @@ function CreatePostModal({ onClose, onPost }: {
                             ))}
                         </div>
                     </div>
+                    <div className="mb-5">
+                        <p className="text-xs font-semibold mb-2" style={{ color: "var(--text-muted)" }}>
+                            Tags <span className="font-normal opacity-80">(optional, max {MAX_EXTRA_TAGS})</span>
+                        </p>
+                        <div className="flex flex-wrap gap-1.5 mb-2 min-h-[26px]">
+                            {extraTags.map(t => (
+                                <span
+                                    key={t}
+                                    className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md"
+                                    style={{
+                                        background: "var(--surface2)",
+                                        color: "var(--text-muted)",
+                                        border: "1px solid var(--border)",
+                                    }}>
+                                    {t}
+                                    <button
+                                        type="button"
+                                        onClick={() => removeTag(t)}
+                                        className="opacity-60 hover:opacity-100 leading-none"
+                                        aria-label={`Remove tag ${t}`}>
+                                        ×
+                                    </button>
+                                </span>
+                            ))}
+                        </div>
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={tagInput}
+                                onChange={e => setTagInput(e.target.value.slice(0, MAX_TAG_LEN + 8))}
+                                onKeyDown={e => {
+                                    if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        addTagsFromInput();
+                                    }
+                                }}
+                                placeholder="e.g. subaru, track-day — Enter to add"
+                                disabled={extraTags.length >= MAX_EXTRA_TAGS}
+                                className="flex-1 min-w-0 rounded-lg px-3 py-2 text-xs outline-none"
+                                style={{
+                                    background: "var(--surface2)",
+                                    color: "var(--text)",
+                                    border: "1px solid var(--border)",
+                                }}
+                            />
+                            <button
+                                type="button"
+                                onClick={addTagsFromInput}
+                                disabled={!tagInput.trim() || extraTags.length >= MAX_EXTRA_TAGS}
+                                className="px-3 py-2 rounded-lg text-xs font-semibold shrink-0 transition-opacity disabled:opacity-40"
+                                style={{ background: "var(--surface2)", color: "var(--text-muted)", border: "1px solid var(--border)" }}>
+                                Add
+                            </button>
+                        </div>
+                    </div>
                     <div className="h-px mb-4" style={{ background: "var(--border)" }} />
                     <div className="flex items-center justify-between">
                         <div className="flex gap-3">
@@ -526,13 +609,14 @@ function CreatePostModal({ onClose, onPost }: {
                                             action: "compose_submit",
                                             hub: selectedHub,
                                             char_len: text.trim().length,
-                                            tags: mergePostTags(selectedHub),
+                                            tags: mergePostTags(selectedHub, extraTags),
+                                            extra_tags: extraTags,
                                             ...(hubNameToHobbySlug(selectedHub)
                                                 ? { hobby_slug: hubNameToHobbySlug(selectedHub)! }
                                                 : {}),
                                         },
                                     });
-                                    onPost(text.trim(), selectedHub);
+                                    onPost(text.trim(), selectedHub, extraTags);
                                     onClose();
                                 }
                             }}
@@ -569,8 +653,9 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
     const [profileHobbySlugs, setProfileHobbySlugs] = useState<string[]>([]);
     const [affinityReady, setAffinityReady] = useState(false);
 
-    const handleNewPost = (text: string, hub: string) => {
-        const newPost = {
+    const handleNewPost = (text: string, hub: string, extraTags: string[] = []) => {
+        const normalizedExtras = [...new Set(extraTags.map(t => normalizeTag(t)).filter(Boolean))].slice(0, MAX_EXTRA_TAGS);
+        const newPost: typeof POSTS[0] = {
             id: Date.now(),
             user: "You",
             handle: "@you",
@@ -578,7 +663,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
             avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
             hub,
             hobbySlug: hubNameToHobbySlug(hub),
-            tags: mergePostTags(hub),
+            tags: mergePostTags(hub, normalizedExtras),
             hubColor: HUB_COLORS[hub] || "#8b5cf6",
             time: "Just now",
             text,
