@@ -12,6 +12,8 @@ export type HubRow = {
   member_count: number | null;
   post_count: number | null;
   hobby_id: number | null;
+  /** From `hobbies.slug` when joined; used for tag defaults when `name` is not a canonical hub label. */
+  hobby_slug?: string | null;
 };
 
 export function hubRowToDetail(row: HubRow, items: HubItem[] = []): HubDetail {
@@ -30,8 +32,11 @@ export function hubRowToDetail(row: HubRow, items: HubItem[] = []): HubDetail {
 
 function stripHubRows(rows: Record<string, unknown>[]): HubRow[] {
   return rows.map((row) => {
-    const { hobbies: _h, ...rest } = row;
-    return rest as HubRow;
+    const { hobbies: h, ...rest } = row;
+    const nested = h as { slug?: string } | null | undefined;
+    const hobby_slug =
+      nested && typeof nested.slug === "string" && nested.slug.trim() ? nested.slug.trim().toLowerCase() : null;
+    return { ...rest, hobby_slug } as HubRow;
   });
 }
 
@@ -85,12 +90,21 @@ export async function fetchHubBySlug(slug: string): Promise<HubRow | null> {
 }
 
 export async function fetchAllHubs(): Promise<HubRow[]> {
-  const { data, error } = await supabase.from("hubs").select("*").order("name", { ascending: true });
+  const { data, error } = await supabase
+    .from("hubs")
+    .select("*, hobbies(slug)")
+    .order("name", { ascending: true });
   if (error) {
     if (process.env.NODE_ENV === "development") {
       console.warn("[hubDb] fetch all hubs", error);
     }
     return [];
   }
-  return (data ?? []) as HubRow[];
+  return (data ?? []).map((row: Record<string, unknown>) => {
+    const { hobbies: h, ...rest } = row;
+    const nested = h as { slug?: string } | null | undefined;
+    const hobby_slug =
+      nested && typeof nested.slug === "string" && nested.slug.trim() ? nested.slug.trim().toLowerCase() : null;
+    return { ...rest, hobby_slug } as HubRow;
+  });
 }

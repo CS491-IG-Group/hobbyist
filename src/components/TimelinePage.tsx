@@ -601,6 +601,8 @@ function CreatePostModal({ onClose, onPost, hubs }: {
                         <button
                             onClick={() => {
                                 if (text.trim() && selectedHub) {
+                                    const picked = hubs.find((h) => h.name === selectedHub);
+                                    const slugForMeta = picked?.hobby_slug ?? hubNameToHobbySlug(selectedHub);
                                     void logContentEvent({
                                         userId,
                                         sessionId,
@@ -610,11 +612,9 @@ function CreatePostModal({ onClose, onPost, hubs }: {
                                             action: "compose_submit",
                                             hub: selectedHub,
                                             char_len: text.trim().length,
-                                            tags: mergePostTags(selectedHub, extraTags),
+                                            tags: mergePostTags(selectedHub, extraTags, picked?.hobby_slug ?? null),
                                             extra_tags: extraTags,
-                                            ...(hubNameToHobbySlug(selectedHub)
-                                                ? { hobby_slug: hubNameToHobbySlug(selectedHub)! }
-                                                : {}),
+                                            ...(slugForMeta ? { hobby_slug: slugForMeta } : {}),
                                         },
                                     });
                                     onPost(text.trim(), selectedHub, extraTags);
@@ -666,7 +666,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                     created_at,
                     hobby_id,
                     extra_tags,
-                    hobbies (name)
+                    hobbies (name, slug)
                 `)
                 .order("created_at", { ascending: false });
 
@@ -677,12 +677,19 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
 
             const mapped = (data || []).map((post: any) => {
                 const hubName = post.hobbies?.name || "Unknown";
+                const hobbySlugFromDb =
+                    typeof post.hobbies?.slug === "string" && post.hobbies.slug.trim()
+                        ? post.hobbies.slug.trim().toLowerCase()
+                        : null;
                 const hobbyId = post.hobby_id as number | null | undefined;
                 const hubRow = hubRowsForColor.find(h => h.hobby_id === hobbyId);
-                const hubColor = hubRow?.gradient_from ?? HUB_COLORS[hubName] ?? "#8b5cf6";
+                const displayHub = hubRow?.name ?? hubName;
+                const hubColor = hubRow?.gradient_from ?? HUB_COLORS[displayHub] ?? HUB_COLORS[hubName] ?? "#8b5cf6";
                 const storedExtras = Array.isArray(post.extra_tags)
                     ? (post.extra_tags as string[]).map(t => normalizeTag(String(t))).filter(Boolean)
                     : [];
+
+                const resolvedHobbySlug = hobbySlugFromDb ?? hubNameToHobbySlug(hubName);
 
                 return {
                     id: post.id,
@@ -690,10 +697,10 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                     handle: "@you",
                     avatar: "✨",
                     avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
-                    hub: hubName,
+                    hub: displayHub,
                     hobbyId: hobbyId ?? null,
-                    hobbySlug: hubNameToHobbySlug(hubName),
-                    tags: mergePostTags(hubName, storedExtras),
+                    hobbySlug: resolvedHobbySlug,
+                    tags: mergePostTags(displayHub, storedExtras, hobbySlugFromDb),
                     hubColor,
                     time: formatTimeAgo(post.created_at),
                     text: post.body,
@@ -778,6 +785,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
 
         const row = hubRows.find(h => h.name === hub);
         const hobbyId = row?.hobby_id ?? null;
+        const hobbySlug = row?.hobby_slug ?? hubNameToHobbySlug(hub);
 
         const newPost: TimelinePost = {
             id: Date.now(),
@@ -787,8 +795,8 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
             avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
             hub,
             hobbyId,
-            hobbySlug: hubNameToHobbySlug(hub),
-            tags: mergePostTags(hub, normalizedExtras),
+            hobbySlug,
+            tags: mergePostTags(hub, normalizedExtras, row?.hobby_slug ?? null),
             hubColor: row?.gradient_from ?? HUB_COLORS[hub] ?? "#8b5cf6",
             time: "Just now",
             text,
