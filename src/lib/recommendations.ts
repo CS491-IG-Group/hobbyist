@@ -2,18 +2,19 @@
 
 import { supabase } from "./supabase";
 import { hubNameToHobbySlug } from "./hubHobbyMap";
+import { normalizeTag } from "./hubTags";
 
 /**
  * Timeline ranking (linear score model) — no LLM.
  *
  * 1. **Affinity** — Walk recent `content_events`. Weight hubs, creators, hobbies (slug),
- *    and penalties from metadata (`hub`, `hobby_slug`, `author_handle`, …).
+ *    **tags** (from metadata `tags` / `tag`), and penalties (`hub`, `hobby_slug`, …).
  *
- * 2. **Profile hobbies** — Rows in `user_hobbies` add a fixed boost for posts whose
- *    `hobbySlug` matches (declared interests, separate from implicit event affinity).
+ * 2. **Profile hobbies** — Rows in `user_hobbies` add a fixed boost when `hobbySlug` matches.
  *
- * 3. **Post score** — hub + creator − penalty + joined hub boost + profile hobby boost
- *    + hobby affinity from events + popularity (log likes).
+ * 3. **Post score** — hub + creator − penalty + joined hub + profile hobby + hobby affinity
+ *    + **tag affinity** (per-tag overlap with learned weights; hobby slug tag skipped to avoid
+ *    double-counting the hobby bucket) + popularity (log likes).
  */
 
 const JOINED_HUB_BOOST = 2.5;
@@ -27,6 +28,9 @@ const DWELL_STRENGTH = 0.55;
 
 /** Event → hobby slug bucket uses gentler weights than hub (same signal, different axis). */
 const HOBBY_WEIGHT_SCALE = 0.45;
+
+/** Tag bucket: same events also bump tags in metadata; scaled down vs hub. */
+const TAG_WEIGHT_SCALE = 0.35;
 
 const WEIGHT: Record<
   string,
@@ -46,6 +50,8 @@ export interface UserAffinity {
   hub: Record<string, number>;
   creator: Record<string, number>;
   hobby: Record<string, number>;
+  /** Normalized tag → weight from interactions (metadata `tags` / `tag`). */
+  tag: Record<string, number>;
   postPenalty: Record<number, number>;
 }
 
@@ -56,6 +62,8 @@ export interface RankableTimelinePost {
   hub: string;
   /** Matches `hobbies.slug` when the post sits in a known hub category. */
   hobbySlug: string | null;
+  /** Normalized tags (hub defaults + post-specific); hobby slug may appear for profile overlap. */
+  tags: string[];
   likes: number;
 }
 
@@ -80,6 +88,39 @@ function hobbySlugFromMeta(meta: Record<string, unknown> | null): string | null 
   const direct = strMeta(meta, "hobby_slug");
   if (direct) return direct.trim().toLowerCase();
   return hubNameToHobbySlug(hubFromMeta(meta));
+}
+
+/** Read tags from event metadata (`tags` array or comma-separated `tag`). */
+export function tagsFromMeta(meta: Record<string, unknown> | null): string[] {
+  if (!meta) return [];
+  const raw = meta["tags"];
+  if (Array.isArray(raw)) {
+    return raw
+      .filter((x): x is string => typeof x === "string")
+      .map((x) => normalizeTag(x))
+      .filter(Boolean);
+  }
+  const single = meta["tag"];
+  if (typeof single === "string") {
+    return single
+      .split(",")
+      .map((x) => normalizeTag(x))
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function applyTagsFromMeta(
+  meta: Record<string, unknown> | null,
+  tagRec: Record<string, number>,
+  hubDelta: number
+) {
+  if (hubDelta === 0) return;
+  const hobby = hobbySlugFromMeta(meta);
+  for (const t of tagsFromMeta(meta)) {
+    if (hobby && t === hobby) continue;
+    addScore(tagRec, t, hubDelta * TAG_WEIGHT_SCALE);
+  }
 }
 
 function addScore(rec: Record<string, number>, key: string, delta: number) {
@@ -116,6 +157,7 @@ function applyStandardEvent(
   hub: Record<string, number>,
   creator: Record<string, number>,
   hobby: Record<string, number>,
+  tag: Record<string, number>,
   postPenalty: Record<number, number>
 ) {
   const w = WEIGHT[row.event_type];
@@ -128,6 +170,7 @@ function applyStandardEvent(
   if (hubName) {
     addScore(hub, hubName, w.hub);
     applyHobbyFromMeta(meta, hobby, w.hub);
+    applyTagsFromMeta(meta, tag, w.hub);
   }
   if (!w.hubOnly && author) addScore(creator, normalizeHandle(author), w.creator);
 
@@ -140,11 +183,12 @@ function aggregateEventsToAffinity(rows: EventRow[]): UserAffinity {
   const hub: Record<string, number> = {};
   const creator: Record<string, number> = {};
   const hobby: Record<string, number> = {};
+  const tag: Record<string, number> = {};
   const postPenalty: Record<number, number> = {};
 
   for (const row of rows) {
     if (WEIGHT[row.event_type]) {
-      applyStandardEvent(row, hub, creator, hobby, postPenalty);
+      applyStandardEvent(row, hub, creator, hobby, tag, postPenalty);
       continue;
     }
 
@@ -164,6 +208,7 @@ function aggregateEventsToAffinity(rows: EventRow[]): UserAffinity {
       if (hubName) {
         addScore(hub, hubName, d);
         applyHobbyFromMeta(meta, hobby, d);
+        applyTagsFromMeta(meta, tag, d);
       }
       if (author) addScore(creator, normalizeHandle(author), d);
       continue;
@@ -175,13 +220,14 @@ function aggregateEventsToAffinity(rows: EventRow[]): UserAffinity {
         if (hubName) {
           addScore(hub, hubName, 1);
           applyHobbyFromMeta(meta, hobby, 1);
+          applyTagsFromMeta(meta, tag, 1);
         }
         if (author) addScore(creator, normalizeHandle(author), 0.9);
       }
     }
   }
 
-  return { hub, creator, hobby, postPenalty };
+  return { hub, creator, hobby, tag, postPenalty };
 }
 
 export type FetchRecommendationContextResult =
@@ -237,6 +283,16 @@ export async function fetchUserAffinity(userId: string) {
   return { ok: true as const, affinity: res.affinity };
 }
 
+function tagAffinityScore(post: RankableTimelinePost, affinity: UserAffinity): number {
+  let s = 0;
+  const tags = post.tags ?? [];
+  for (const t of tags) {
+    if (post.hobbySlug && t === post.hobbySlug) continue;
+    s += affinity.tag[t] ?? 0;
+  }
+  return s;
+}
+
 export function scorePostForUser(
   post: RankableTimelinePost,
   affinity: UserAffinity | null,
@@ -251,6 +307,7 @@ export function scorePostForUser(
     if (post.hobbySlug) {
       score += affinity.hobby[post.hobbySlug] ?? 0;
     }
+    score += tagAffinityScore(post, affinity);
   }
   if (joinedHubs.includes(post.hub)) score += JOINED_HUB_BOOST;
   if (post.hobbySlug && profileHobbySlugs.includes(post.hobbySlug)) {

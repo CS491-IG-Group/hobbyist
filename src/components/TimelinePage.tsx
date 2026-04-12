@@ -5,9 +5,10 @@ import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
 import { fetchRecommendationContext, rankTimelinePosts, type UserAffinity } from "../lib/recommendations";
 import { hubNameToHobbySlug } from "../lib/hubHobbyMap";
+import { mergePostTags } from "../lib/hubTags";
 
 function postAnalyticsMeta(
-  post: { hub: string; handle: string; id: number },
+  post: { hub: string; handle: string; id: number; tags?: string[] },
   extra: Record<string, unknown> = {}
 ) {
   const hobby_slug = hubNameToHobbySlug(post.hub);
@@ -16,11 +17,12 @@ function postAnalyticsMeta(
     hub: post.hub,
     author_handle: post.handle,
     client_post_id: post.id,
+    tags: post.tags ?? [],
     ...(hobby_slug ? { hobby_slug } : {}),
   };
 }
 
-const POSTS = [
+const POSTS_RAW = [
     {
         id: 1,
         user: "Alex Rivera",
@@ -35,6 +37,7 @@ const POSTS = [
         likes: 214,
         comments: 53,
         reposts: 28,
+        postTags: ["subaru", "track-day", "suspension"],
     },
     {
         id: 2,
@@ -50,6 +53,7 @@ const POSTS = [
         likes: 389,
         comments: 74,
         reposts: 45,
+        postTags: ["deadlift", "powerlifting"],
     },
     {
         id: 3,
@@ -65,6 +69,7 @@ const POSTS = [
         likes: 512,
         comments: 118,
         reposts: 89,
+        postTags: ["macbook", "benchmarks"],
     },
     {
         id: 4,
@@ -80,6 +85,7 @@ const POSTS = [
         likes: 631,
         comments: 142,
         reposts: 97,
+        postTags: ["dune", "villeneuve"],
     },
     {
         id: 5,
@@ -95,6 +101,7 @@ const POSTS = [
         likes: 428,
         comments: 63,
         reposts: 51,
+        postTags: ["contax", "mountains"],
     },
     {
         id: 6,
@@ -110,8 +117,18 @@ const POSTS = [
         likes: 295,
         comments: 67,
         reposts: 38,
+        postTags: ["ramen", "tonkotsu"],
     },
-].map((p) => ({ ...p, hobbySlug: hubNameToHobbySlug(p.hub) }));
+];
+
+const POSTS = POSTS_RAW.map((p) => {
+    const { postTags, ...rest } = p;
+    return {
+        ...rest,
+        hobbySlug: hubNameToHobbySlug(rest.hub),
+        tags: mergePostTags(rest.hub, [...postTags]),
+    };
+});
 
 const FILTERS = ["All", "Cars", "Fitness", "Technology", "Movies", "Photography", "Cooking"];
 
@@ -333,6 +350,23 @@ function PostCard({ post, heightClass }: PostCardProps) {
                     </p>
                 )}
 
+                {post.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                        {post.tags.slice(0, 5).map((t) => (
+                            <span
+                                key={t}
+                                className="text-[9px] font-medium px-1.5 py-0.5 rounded-md"
+                                style={{
+                                    color: "var(--text-muted)",
+                                    background: "var(--surface2)",
+                                    border: "1px solid var(--border)",
+                                }}>
+                                {t}
+                            </span>
+                        ))}
+                    </div>
+                )}
+
                 {/* User row */}
                 <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
@@ -492,6 +526,7 @@ function CreatePostModal({ onClose, onPost }: {
                                             action: "compose_submit",
                                             hub: selectedHub,
                                             char_len: text.trim().length,
+                                            tags: mergePostTags(selectedHub),
                                             ...(hubNameToHobbySlug(selectedHub)
                                                 ? { hobby_slug: hubNameToHobbySlug(selectedHub)! }
                                                 : {}),
@@ -543,6 +578,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
             avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
             hub,
             hobbySlug: hubNameToHobbySlug(hub),
+            tags: mergePostTags(hub),
             hubColor: HUB_COLORS[hub] || "#8b5cf6",
             time: "Just now",
             text,
@@ -627,7 +663,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                                         color: "#a78bfa",
                                         border: "1px solid rgba(139,92,246,0.25)",
                                     }}
-                                    title="Order uses your activity, joined hubs, saved hobbies (Account → Feed interests), and popularity">
+                                    title="Order uses your activity, hub + tag affinity, joined hubs, saved hobbies (Account → Feed interests), and popularity">
                                     For you
                                 </span>
                             )}
