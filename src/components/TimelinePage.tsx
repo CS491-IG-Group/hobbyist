@@ -3,11 +3,28 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import HubPage from "./HubsProfile";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
-import { fetchUserAffinity, rankTimelinePosts, type UserAffinity } from "../lib/recommendations";
+import { fetchRecommendationContext, rankTimelinePosts, type UserAffinity } from "../lib/recommendations";
 import { supabase } from "../lib/supabase";
 import { fetchAllHubs, type HubRow } from "../lib/hubDb";
+import { hubNameToHobbySlug } from "../lib/hubHobbyMap";
+import { mergePostTags } from "../lib/hubTags";
 
-const POSTS = [
+function postAnalyticsMeta(
+  post: { hub: string; handle: string; id: number; tags?: string[] },
+  extra: Record<string, unknown> = {}
+) {
+  const hobby_slug = hubNameToHobbySlug(post.hub);
+  return {
+    ...extra,
+    hub: post.hub,
+    author_handle: post.handle,
+    client_post_id: post.id,
+    tags: post.tags ?? [],
+    ...(hobby_slug ? { hobby_slug } : {}),
+  };
+}
+
+const POSTS_RAW = [
     {
         id: 1,
         user: "Alex Rivera",
@@ -22,6 +39,7 @@ const POSTS = [
         likes: 214,
         comments: 53,
         reposts: 28,
+        postTags: ["subaru", "track-day", "suspension"],
     },
     {
         id: 2,
@@ -37,6 +55,7 @@ const POSTS = [
         likes: 389,
         comments: 74,
         reposts: 45,
+        postTags: ["deadlift", "powerlifting"],
     },
     {
         id: 3,
@@ -52,6 +71,7 @@ const POSTS = [
         likes: 512,
         comments: 118,
         reposts: 89,
+        postTags: ["macbook", "benchmarks"],
     },
     {
         id: 4,
@@ -67,6 +87,7 @@ const POSTS = [
         likes: 631,
         comments: 142,
         reposts: 97,
+        postTags: ["dune", "villeneuve"],
     },
     {
         id: 5,
@@ -82,6 +103,7 @@ const POSTS = [
         likes: 428,
         comments: 63,
         reposts: 51,
+        postTags: ["contax", "mountains"],
     },
     {
         id: 6,
@@ -97,8 +119,18 @@ const POSTS = [
         likes: 295,
         comments: 67,
         reposts: 38,
+        postTags: ["ramen", "tonkotsu"],
     },
 ];
+
+const POSTS = POSTS_RAW.map((p) => {
+    const { postTags, ...rest } = p;
+    return {
+        ...rest,
+        hobbySlug: hubNameToHobbySlug(rest.hub),
+        tags: mergePostTags(rest.hub, [...postTags]),
+    };
+});
 
 const HUB_COLORS: Record<string, string> = {
     Cars: "#3b82f6", Fitness: "#10b981", Technology: "#f59e0b",
@@ -145,12 +177,7 @@ function PostCard({ post, heightClass }: PostCardProps) {
         sessionId,
         uiLocation: "timeline",
         postId: post.id,
-        metadata: {
-            kind: "post_impression",
-            hub: post.hub,
-            author_handle: post.handle,
-            client_post_id: post.id,
-        },
+        metadata: postAnalyticsMeta(post, { kind: "post_impression" }),
     });
 
     useEffect(() => {
@@ -172,7 +199,7 @@ function PostCard({ post, heightClass }: PostCardProps) {
             eventType: "like",
             postId: post.id,
             uiLocation: "timeline",
-            metadata: { hub: post.hub, author_handle: post.handle },
+            metadata: postAnalyticsMeta(post),
         });
     };
 
@@ -186,7 +213,7 @@ function PostCard({ post, heightClass }: PostCardProps) {
             eventType: next ? "save" : "unsave",
             postId: post.id,
             uiLocation: "timeline",
-            metadata: { hub: post.hub, client_post_id: post.id },
+            metadata: postAnalyticsMeta(post),
         });
     };
 
@@ -198,7 +225,7 @@ function PostCard({ post, heightClass }: PostCardProps) {
             eventType: kind,
             postId: post.id,
             uiLocation: "timeline",
-            metadata: { hub: post.hub, client_post_id: post.id },
+            metadata: postAnalyticsMeta(post),
         });
     };
 
@@ -217,12 +244,7 @@ function PostCard({ post, heightClass }: PostCardProps) {
                     eventType: "click",
                     uiLocation: "timeline",
                     postId: post.id,
-                    metadata: {
-                        action: "post_card_tap",
-                        hub: post.hub,
-                        author_handle: post.handle,
-                        client_post_id: post.id,
-                    },
+                    metadata: postAnalyticsMeta(post, { action: "post_card_tap" }),
                 });
             }}
             onMouseEnter={() => setHovered(true)}
@@ -328,6 +350,23 @@ function PostCard({ post, heightClass }: PostCardProps) {
                     </p>
                 )}
 
+                {post.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                        {post.tags.slice(0, 5).map((t) => (
+                            <span
+                                key={t}
+                                className="text-[9px] font-medium px-1.5 py-0.5 rounded-md"
+                                style={{
+                                    color: "var(--text-muted)",
+                                    background: "var(--surface2)",
+                                    border: "1px solid var(--border)",
+                                }}>
+                                {t}
+                            </span>
+                        ))}
+                    </div>
+                )}
+
                 {/* User row */}
                 <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
@@ -358,12 +397,7 @@ function PostCard({ post, heightClass }: PostCardProps) {
                                     eventType: "click",
                                     uiLocation: "timeline",
                                     postId: post.id,
-                                    metadata: {
-                                        action: "comment_button_tap",
-                                        hub: post.hub,
-                                        author_handle: post.handle,
-                                        client_post_id: post.id,
-                                    },
+                                    metadata: postAnalyticsMeta(post, { action: "comment_button_tap" }),
                                 });
                             }}
                             className="flex items-center gap-1 text-[10px]"
@@ -493,6 +527,10 @@ function CreatePostModal({ onClose, onPost, hubs }: {
                                             action: "compose_submit",
                                             hub: selectedHub,
                                             char_len: text.trim().length,
+                                            tags: mergePostTags(selectedHub),
+                                            ...(hubNameToHobbySlug(selectedHub)
+                                                ? { hobby_slug: hubNameToHobbySlug(selectedHub)! }
+                                                : {}),
                                         },
                                     });
                                     onPost(text.trim(), selectedHub);
@@ -566,6 +604,8 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                     avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
                     hub: hubName,
                     hobbyId: hobbyId ?? null,
+                    hobbySlug: hubNameToHobbySlug(hubName),
+                    tags: mergePostTags(hubName),
                     hubColor,
                     time: formatTimeAgo(post.created_at),
                     text: post.body,
@@ -600,6 +640,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
     const [hubRows, setHubRows] = useState<HubRow[]>([]);
     const [loadingPosts, setLoadingPosts] = useState(true);
     const [affinity, setAffinity] = useState<UserAffinity | null>(null);
+    const [profileHobbySlugs, setProfileHobbySlugs] = useState<string[]>([]);
     const [affinityReady, setAffinityReady] = useState(false);
 
     // ── Updated: saves post to Supabase before updating local feed ──
@@ -657,6 +698,8 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
             avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
             hub,
             hobbyId,
+            hobbySlug: hubNameToHobbySlug(hub),
+            tags: mergePostTags(hub),
             hubColor: row?.gradient_from ?? HUB_COLORS[hub] ?? "#8b5cf6",
             time: "Just now",
             text,
@@ -681,8 +724,8 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
 
     const feedPosts = useMemo(() => {
         if (!affinityReady) return filtered;
-        return rankTimelinePosts(filtered, affinity, joinedHubs);
-    }, [filtered, affinity, affinityReady, joinedHubs]);
+        return rankTimelinePosts(filtered, affinity, joinedHubs, profileHobbySlugs);
+    }, [filtered, affinity, affinityReady, joinedHubs, profileHobbySlugs]);
 
     useEffect(() => {
         if (!userId) return;
@@ -712,6 +755,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
     useEffect(() => {
         if (!userId) {
             setAffinity(null);
+            setProfileHobbySlugs([]);
             setAffinityReady(false);
             return;
         }
@@ -719,13 +763,15 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
         let cancelled = false;
         setAffinityReady(false);
         void (async () => {
-            const res = await fetchUserAffinity(userId);
+            const res = await fetchRecommendationContext(userId);
             if (!cancelled) {
                 if (res.ok) {
                     setAffinity(res.affinity);
+                    setProfileHobbySlugs(res.profileHobbySlugs);
                     setAffinityReady(true);
                 } else {
                     setAffinity(null);
+                    setProfileHobbySlugs([]);
                     setAffinityReady(false);
                 }
             }
@@ -773,7 +819,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                                         color: "#a78bfa",
                                         border: "1px solid rgba(139,92,246,0.25)",
                                     }}
-                                    title="Order is based on your hubs, likes, saves, and views">
+                                    title="Order uses your activity, hub + tag affinity, joined hubs, saved hobbies (Account → Feed interests), and popularity">
                                     For you
                                 </span>
                             )}
@@ -866,12 +912,17 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                                     className="rounded-xl p-3 transition-all hover:scale-[1.02] h-14 flex items-center cursor-pointer"
                                     style={{ background: hub.bg, border: "1px solid rgba(255,255,255,0.1)", boxShadow: `0 4px 16px ${hub.color}20` }}
                                     onClick={() => {
+                                        const hobby_slug = hubNameToHobbySlug(hub.name);
                                         void logContentEvent({
                                             userId,
                                             sessionId,
                                             eventType: "click",
                                             uiLocation: "timeline",
-                                            metadata: { action: "open_hub_from_trending", hub: hub.name },
+                                            metadata: {
+                                                action: "open_hub_from_trending",
+                                                hub: hub.name,
+                                                ...(hobby_slug ? { hobby_slug } : {}),
+                                            },
                                         });
                                         setActiveHub(hub.name);
                                     }}>
@@ -887,6 +938,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                                             <button
                                                 onClick={e => {
                                                     e.stopPropagation();
+                                                    const hobby_slug = hubNameToHobbySlug(hub.name);
                                                     void logContentEvent({
                                                         userId,
                                                         sessionId,
@@ -896,6 +948,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                                                             action: isJoined ? "leave_hub" : "join_hub",
                                                             hub: hub.name,
                                                             source: "timeline_trending_card",
+                                                            ...(hobby_slug ? { hobby_slug } : {}),
                                                         },
                                                     });
                                                     onToggleJoin(hub.name);
