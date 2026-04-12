@@ -238,6 +238,7 @@ function PostCard({ post, heightClass }: PostCardProps) {
 
     // Text-only posts get a colored gradient background
     const isTextOnly = !post.image;
+    const userTagsChips = post.userTags ?? [];
 
     return (
         <div
@@ -357,9 +358,9 @@ function PostCard({ post, heightClass }: PostCardProps) {
                     </p>
                 )}
 
-                {post.userTags.length > 0 && (
+                {userTagsChips.length > 0 && (
                     <div className="flex flex-wrap gap-1 mb-2">
-                        {post.userTags.slice(0, MAX_EXTRA_TAGS).map((t) => (
+                        {userTagsChips.slice(0, MAX_EXTRA_TAGS).map((t) => (
                             <span
                                 key={t}
                                 className="text-[9px] font-medium px-1.5 py-0.5 rounded-md"
