@@ -9,6 +9,28 @@ import { fetchAllHubs, type HubRow } from "../lib/hubDb";
 import { hubNameToHobbySlug } from "../lib/hubHobbyMap";
 import { mergePostTags, normalizeTag } from "../lib/hubTags";
 
+/** Selected hub name → `public.hubs.id` (primary key), same list as the compose UI. */
+function resolveHubRowForName(hubName: string, rows: HubRow[]): HubRow | null {
+  return rows.find((h) => h.name === hubName) ?? null;
+}
+
+/** `posts.user_id` FK requires a row in public.users; signup trigger may be missing in some DBs. */
+async function ensurePublicUserRow(user: { id: string; email?: string | null }): Promise<{ ok: boolean; message?: string }> {
+  const { data, error: selErr } = await supabase.from("users").select("id").eq("id", user.id).maybeSingle();
+  if (selErr && process.env.NODE_ENV === "development") {
+    console.warn("[ensurePublicUserRow] select failed", selErr.message);
+  }
+  if (data) return { ok: true };
+
+  const { error: insErr } = await supabase.from("users").insert({ id: user.id, email: user.email ?? null });
+  if (!insErr) return { ok: true };
+  /* Race: trigger created the row between select and insert */
+  if (insErr.code === "23505") return { ok: true };
+
+  console.error("[ensurePublicUserRow] insert failed", insErr.message);
+  return { ok: false, message: insErr.message };
+}
+
 function postAnalyticsMeta(
   post: { hub: string; handle: string; id: number; tags?: string[] },
   extra: Record<string, unknown> = {}
@@ -163,7 +185,7 @@ function CommentIcon() {
 // Assign a random-ish height class per post so masonry looks varied
 const HEIGHT_CLASSES = ["h-48", "h-56", "h-64", "h-72", "h-52", "h-60"];
 
-type TimelinePost = typeof POSTS[0] & { hobbyId?: number | null };
+type TimelinePost = typeof POSTS[0] & { hubId?: string | null };
 
 interface PostCardProps {
     post: TimelinePost;
@@ -659,42 +681,40 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
         return `${days}d ago`;
     };
 
+    const [postsFetchError, setPostsFetchError] = useState<string | null>(null);
+
     const loadPosts = useCallback(async (hubRowsForColor: HubRow[]) => {
         try {
             setLoadingPosts(true);
+            setPostsFetchError(null);
 
             const { data, error } = await supabase
                 .from("posts")
-                .select(`
-                    id,
-                    body,
-                    created_at,
-                    hobby_id,
-                    extra_tags,
-                    hobbies (name, slug)
-                `)
+                .select("id, body, created_at, hub_id, extra_tags")
                 .order("created_at", { ascending: false });
 
             if (error) {
                 console.error("Error loading posts:", error.message);
+                setPostsFetchError(error.message);
                 return;
             }
 
             const mapped = (data || []).map((post: any) => {
-                const hubName = post.hobbies?.name || "Unknown";
+                const hubRow = hubRowsForColor.find(
+                    (h) => h.id === post.hub_id || String(h.id) === String(post.hub_id)
+                );
+                const displayHub = hubRow?.name ?? "Unknown";
                 const hobbySlugFromDb =
-                    typeof post.hobbies?.slug === "string" && post.hobbies.slug.trim()
-                        ? post.hobbies.slug.trim().toLowerCase()
+                    hubRow?.hobby_slug && hubRow.hobby_slug.trim()
+                        ? hubRow.hobby_slug.trim().toLowerCase()
                         : null;
-                const hobbyId = post.hobby_id as number | null | undefined;
-                const hubRow = hubRowsForColor.find(h => h.hobby_id === hobbyId);
-                const displayHub = hubRow?.name ?? hubName;
-                const hubColor = hubRow?.gradient_from ?? HUB_COLORS[displayHub] ?? HUB_COLORS[hubName] ?? "#8b5cf6";
+                const hubColor =
+                    hubRow?.gradient_from ?? HUB_COLORS[displayHub] ?? "#8b5cf6";
                 const storedExtras = Array.isArray(post.extra_tags)
-                    ? (post.extra_tags as string[]).map(t => normalizeTag(String(t))).filter(Boolean)
+                    ? (post.extra_tags as string[]).map((t) => normalizeTag(String(t))).filter(Boolean)
                     : [];
 
-                const resolvedHobbySlug = hobbySlugFromDb ?? hubNameToHobbySlug(hubName);
+                const resolvedHobbySlug = hobbySlugFromDb ?? hubNameToHobbySlug(displayHub);
 
                 return {
                     id: post.id,
@@ -703,7 +723,12 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                     avatar: "✨",
                     avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
                     hub: displayHub,
-                    hobbyId: hobbyId ?? null,
+                    hubId:
+                        typeof post.hub_id === "string"
+                            ? post.hub_id
+                            : post.hub_id != null
+                              ? String(post.hub_id)
+                              : null,
                     hobbySlug: resolvedHobbySlug,
                     tags: mergePostTags(displayHub, storedExtras, hobbySlugFromDb),
                     userTags: storedExtras,
@@ -720,6 +745,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
             setPosts(mapped);
         } catch (err) {
             console.error("Load posts error:", err);
+            setPostsFetchError(err instanceof Error ? err.message : "Could not load posts.");
         } finally {
             setLoadingPosts(false);
         }
@@ -744,75 +770,65 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
     const [profileHobbySlugs, setProfileHobbySlugs] = useState<string[]>([]);
     const [affinityReady, setAffinityReady] = useState(false);
 
-    // ── Saves post to Supabase (with optional extra_tags) then updates local feed ──
+    const [postSaveError, setPostSaveError] = useState<string | null>(null);
+
+    // ── Saves post to Supabase (with optional extra_tags) then reloads feed from DB ──
     const handleNewPost = async (text: string, hub: string, extraTags: string[] = []) => {
         const normalizedExtras = [...new Set(extraTags.map(t => normalizeTag(t)).filter(Boolean))].slice(0, MAX_EXTRA_TAGS);
+        setPostSaveError(null);
+
         try {
             const { data: { user } } = await supabase.auth.getUser();
-
-            if (user) {
-                const { data: hubRow } = await supabase
-                    .from("hubs")
-                    .select("hobby_id")
-                    .eq("name", hub)
-                    .maybeSingle();
-
-                let hobbyId: number | null = hubRow?.hobby_id ?? null;
-                if (hobbyId == null) {
-                    const { data: hobby } = await supabase
-                        .from("hobbies")
-                        .select("id")
-                        .eq("name", hub)
-                        .maybeSingle();
-                    hobbyId = hobby?.id ?? null;
-                }
-
-                if (hobbyId == null) {
-                    console.error("[handleNewPost] Could not resolve hobby_id for hub:", hub);
-                } else {
-                    const { error } = await supabase.from("posts").insert({
-                        user_id: user.id,
-                        body: text,
-                        hobby_id: hobbyId,
-                        post_type: "text",
-                        extra_tags: normalizedExtras.length ? normalizedExtras : [],
-                    });
-
-                    if (error) {
-                        console.error("[handleNewPost] Supabase insert failed:", error.message);
-                    }
-                }
-            } else {
+            if (!user) {
                 console.warn("[handleNewPost] No authenticated user found — post not saved to Supabase.");
+                setPostSaveError("You must be signed in to post.");
+                return;
+            }
+
+            if (hubRows.length === 0) {
+                setPostSaveError("Hubs are still loading. Please wait a moment and try again.");
+                return;
+            }
+
+            const ensured = await ensurePublicUserRow(user);
+            if (!ensured.ok) {
+                setPostSaveError(ensured.message ?? "Could not prepare your profile to post.");
+                return;
+            }
+
+            const hubRow = resolveHubRowForName(hub, hubRows);
+            if (!hubRow?.id) {
+                const msg = `Could not resolve a hub for “${hub}”.`;
+                console.error("[handleNewPost]", msg);
+                setPostSaveError(msg);
+                return;
+            }
+
+            const { data: inserted, error } = await supabase
+                .from("posts")
+                .insert({
+                    user_id: user.id,
+                    body: text,
+                    hub_id: hubRow.id,
+                    post_type: "text",
+                    extra_tags: normalizedExtras.length ? normalizedExtras : [],
+                })
+                .select("id")
+                .single();
+
+            if (error) {
+                console.error("[handleNewPost] Supabase insert failed:", error.message);
+                setPostSaveError(error.message);
+                return;
+            }
+
+            if (inserted?.id != null) {
+                await loadPosts(hubRows);
             }
         } catch (err) {
             console.error("[handleNewPost] Unexpected error:", err);
+            setPostSaveError(err instanceof Error ? err.message : "Could not save post.");
         }
-
-        const row = hubRows.find(h => h.name === hub);
-        const hobbyId = row?.hobby_id ?? null;
-        const hobbySlug = row?.hobby_slug ?? hubNameToHobbySlug(hub);
-
-        const newPost: TimelinePost = {
-            id: Date.now(),
-            user: "You",
-            handle: "@you",
-            avatar: "✨",
-            avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
-            hub,
-            hobbyId,
-            hobbySlug,
-            tags: mergePostTags(hub, normalizedExtras, row?.hobby_slug ?? null),
-            userTags: normalizedExtras,
-            hubColor: row?.gradient_from ?? HUB_COLORS[hub] ?? "#8b5cf6",
-            time: "Just now",
-            text,
-            image: null,
-            likes: 0,
-            comments: 0,
-            reposts: 0,
-        };
-        setPosts(prev => [newPost, ...prev]);
     };
 
     const filterHubPills = useMemo(() => ["All", ...hubRows.map(h => h.name)], [hubRows]);
@@ -820,8 +836,8 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
     const filtered = useMemo(() => {
         if (activeFilter === "All") return posts;
         const row = hubRows.find(h => h.name === activeFilter);
-        if (row?.hobby_id != null) {
-            return posts.filter(p => p.hobbyId === row.hobby_id);
+        if (row?.id != null) {
+            return posts.filter((p) => p.hubId === row.id);
         }
         return posts.filter(p => p.hub === activeFilter);
     }, [posts, activeFilter, hubRows]);
@@ -831,59 +847,60 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
         return rankTimelinePosts(filtered, affinity, joinedHubs, profileHobbySlugs);
     }, [filtered, affinity, affinityReady, joinedHubs, profileHobbySlugs]);
 
+    /* Hubs + posts + affinity follow Supabase session — not Analytics `userId` (often null if profile fetch failed). */
     useEffect(() => {
-        if (!userId) return;
-
         let cancelled = false;
-        void (async () => {
+
+        async function refreshForAuthUser(uid: string | null) {
+            if (!uid) {
+                setHubRows([]);
+                setPosts([]);
+                setAffinity(null);
+                setProfileHobbySlugs([]);
+                setAffinityReady(false);
+                setLoadingPosts(false);
+                setPostsFetchError(null);
+                return;
+            }
+
             const rows = await fetchAllHubs();
-            if (!cancelled) setHubRows(rows);
+            if (cancelled) return;
+            setHubRows(rows);
+            await loadPosts(rows);
+
+            setAffinityReady(false);
+            const res = await fetchRecommendationContext(uid);
+            if (cancelled) return;
+            if (res.ok) {
+                setAffinity(res.affinity);
+                setProfileHobbySlugs(res.profileHobbySlugs);
+                setAffinityReady(true);
+            } else {
+                setAffinity(null);
+                setProfileHobbySlugs([]);
+                setAffinityReady(false);
+            }
+        }
+
+        void (async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            await refreshForAuthUser(user?.id ?? null);
         })();
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            void refreshForAuthUser(session?.user?.id ?? null);
+        });
 
         return () => {
             cancelled = true;
+            subscription.unsubscribe();
         };
-    }, [userId]);
-
-    useEffect(() => {
-        if (!userId) return;
-
-        void loadPosts(hubRows);
-    }, [userId, hubRows, loadPosts]);
+    }, [loadPosts]);
 
     useEffect(() => {
         const valid = new Set(filterHubPills);
         if (!valid.has(activeFilter)) setActiveFilter("All");
     }, [filterHubPills, activeFilter]);
-
-    useEffect(() => {
-        if (!userId) {
-            setAffinity(null);
-            setProfileHobbySlugs([]);
-            setAffinityReady(false);
-            return;
-        }
-
-        let cancelled = false;
-        setAffinityReady(false);
-        void (async () => {
-            const res = await fetchRecommendationContext(userId);
-            if (!cancelled) {
-                if (res.ok) {
-                    setAffinity(res.affinity);
-                    setProfileHobbySlugs(res.profileHobbySlugs);
-                    setAffinityReady(true);
-                } else {
-                    setAffinity(null);
-                    setProfileHobbySlugs([]);
-                    setAffinityReady(false);
-                }
-            }
-        })();
-        return () => {
-            cancelled = true;
-        };
-    }, [userId]);
 
     useEffect(() => {
         logContentEvent({
@@ -933,6 +950,15 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                         </span>
                     </div>
 
+                    {(postSaveError || postsFetchError) && (
+                        <div
+                            className="mb-4 rounded-xl px-4 py-3 text-sm"
+                            style={{ background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.35)", color: "#fecaca" }}
+                            role="alert">
+                            {postSaveError ?? postsFetchError}
+                        </div>
+                    )}
+
                     {/* Filter pills */}
                     <div className="flex gap-2 overflow-x-auto pb-3 mb-6 scrollbar-hide">
                         {filterHubPills.map(f => (
@@ -979,6 +1005,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                             uiLocation: "timeline",
                             metadata: { action: "compose_open_fab" },
                         });
+                        setPostSaveError(null);
                         setShowCompose(true);
                     }}
                     className="fixed bottom-8 z-40 w-14 h-14 rounded-full flex items-center justify-center text-white transition-all hover:scale-110 active:scale-95"
