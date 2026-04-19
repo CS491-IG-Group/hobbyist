@@ -16,6 +16,62 @@ interface OnboardingUser {
 
 const SESSION_MS = 12_000;
 const PROFILE_MS = 12_000;
+const PROFILE_FETCH_ATTEMPTS = 3;
+
+interface UsersProfileRow {
+  onboarding_completed: boolean | null;
+  display_name: string | null;
+  handle: string | null;
+}
+
+/** True if the wizard finished, or the user already filled a public profile elsewhere (e.g. Edit profile). */
+function profileLooksComplete(row: UsersProfileRow): boolean {
+  if (row.onboarding_completed === true) return true;
+  const name = row.display_name?.trim() ?? "";
+  const handle = row.handle?.trim() ?? "";
+  return name.length > 0 && handle.length > 0;
+}
+
+/**
+ * Loads `public.users` with retries. Timeouts and transient errors must not be treated as
+ * “user has no profile” — that incorrectly forced returning users through onboarding.
+ */
+async function loadUsersProfile(userId: string): Promise<
+  | { status: "ok"; row: UsersProfileRow | null }
+  | { status: "failed" }
+> {
+  for (let attempt = 0; attempt < PROFILE_FETCH_ATTEMPTS; attempt++) {
+    try {
+      const res = await withTimeout(
+        supabase
+          .from("users")
+          .select("onboarding_completed, display_name, handle")
+          .eq("id", userId)
+          .maybeSingle(),
+        PROFILE_MS,
+        "users profile"
+      );
+      if (res.error) {
+        if (process.env.NODE_ENV === "development") {
+          console.warn("[auth] users profile query error", res.error);
+        }
+        if (attempt < PROFILE_FETCH_ATTEMPTS - 1) {
+          await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+        }
+        continue;
+      }
+      return { status: "ok", row: res.data as UsersProfileRow | null };
+    } catch (e) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[auth] users profile fetch failed or stalled", e);
+      }
+      if (attempt < PROFILE_FETCH_ATTEMPTS - 1) {
+        await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+      }
+    }
+  }
+  return { status: "failed" };
+}
 
 export default function Home() {
   const [view, setView] = useState<View>("loading");
@@ -29,30 +85,23 @@ export default function Home() {
     }
 
     const user = session.user;
-    let profile: { onboarding_completed: boolean | null } | null = null;
+    const result = await loadUsersProfile(user.id);
 
-    try {
-      const res = await withTimeout(
-        supabase
-          .from("users")
-          .select("onboarding_completed")
-          .eq("id", user.id)
-          .maybeSingle(),
-        PROFILE_MS,
-        "users profile"
-      );
-      profile = res.data ?? null;
-    } catch (e) {
+    if (result.status === "failed") {
       if (process.env.NODE_ENV === "development") {
-        console.warn("[auth] users profile fetch failed or stalled — continuing as onboarding", e);
+        console.warn("[auth] users profile unavailable after retries — opening app without onboarding gate");
       }
-      profile = null;
+      setOnboardingUser(null);
+      setView("dashboard");
+      return;
     }
 
-    if (!profile || !profile.onboarding_completed) {
+    const row = result.row;
+    if (!row || !profileLooksComplete(row)) {
       setOnboardingUser({ id: user.id, email: user.email ?? "" });
       setView("onboarding");
     } else {
+      setOnboardingUser(null);
       setView("dashboard");
     }
   }, []);

@@ -147,7 +147,12 @@ function EditProfileModal({
             // 1. Update public.users (display_name, handle, bio)
             const { error: dbErr } = await supabase
                 .from("users")
-                .update({ display_name, handle: handle || null, bio: bio || null })
+                .update({
+                    display_name,
+                    handle: handle || null,
+                    bio: bio || null,
+                    onboarding_completed: true,
+                })
                 .eq("id", userId);
             if (dbErr) { setError(dbErr.message); return; }
 
