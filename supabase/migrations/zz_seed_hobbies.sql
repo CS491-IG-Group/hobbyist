@@ -1,4 +1,4 @@
-/* Canonical hobbies aligned with timeline hub labels (for user_hobbies + post hobby_id).
+/* Canonical hobbies aligned with discover hub labels (for user_hobbies + hubs.hobby_id).
    Runs after hobbies / user_hobbies DDL (filename prefix zz_). */
 INSERT INTO public.hobbies (name, slug, "desc")
 VALUES

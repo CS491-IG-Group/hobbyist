@@ -211,8 +211,14 @@ export default function DashboardPage({ onLogout }: Props) {
         if (cancelled) return;
         if (sessionErr) throw sessionErr;
         const user = session?.user ?? null;
-        if (user) {
-          setUserId(user.id);
+        if (!user) {
+          setUserId(null);
+          return;
+        }
+
+        setUserId(user.id);
+
+        try {
           const res = await withTimeout(
             supabase
               .from("users")
@@ -224,12 +230,14 @@ export default function DashboardPage({ onLogout }: Props) {
           );
           if (cancelled) return;
           setOnboardingCompleted(res.data?.onboarding_completed === true);
-        } else {
-          setUserId(null);
+        } catch (profileErr) {
+          if (process.env.NODE_ENV === "development") {
+            console.warn("[dashboard] users profile fetch failed (session kept)", profileErr);
+          }
         }
       } catch (e) {
         if (process.env.NODE_ENV === "development") {
-          console.warn("[dashboard] auth/profile init failed", e);
+          console.warn("[dashboard] auth init failed", e);
         }
         if (!cancelled) {
           setUserId(null);
