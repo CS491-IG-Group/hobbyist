@@ -31,6 +31,39 @@ async function ensurePublicUserRow(user: { id: string; email?: string | null }):
   return { ok: false, message: insErr.message };
 }
 
+/** Map `posts` + joined `public.users` to timeline `user` / `handle` (handle used for ranking + analytics). */
+function authorFromPostRow(
+  userId: string,
+  usersEmbed:
+    | { handle: string | null; display_name: string | null }
+    | { handle: string | null; display_name: string | null }[]
+    | null
+    | undefined,
+  currentUserId: string | null
+): { user: string; handle: string } {
+  const profile = Array.isArray(usersEmbed) ? usersEmbed[0] ?? null : usersEmbed ?? null;
+  const trimmedHandle = profile?.handle?.trim() ?? "";
+  const displayName = profile?.display_name?.trim() ?? "";
+  const atHandle =
+    trimmedHandle.length > 0
+      ? trimmedHandle.startsWith("@")
+        ? trimmedHandle
+        : `@${trimmedHandle}`
+      : `@user_${userId.replace(/-/g, "").slice(0, 8)}`;
+
+  const isSelf = currentUserId != null && userId === currentUserId;
+  if (isSelf) {
+    return { user: "You", handle: atHandle };
+  }
+
+  const label =
+    displayName ||
+    (trimmedHandle ? trimmedHandle.replace(/^@/, "") : "") ||
+    "Member";
+
+  return { user: label, handle: atHandle };
+}
+
 function postAnalyticsMeta(
   post: { hub: string; handle: string; id: number; tags?: string[] },
   extra: Record<string, unknown> = {}
@@ -688,9 +721,15 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
             setLoadingPosts(true);
             setPostsFetchError(null);
 
+            const {
+                data: { user: authUser },
+            } = await supabase.auth.getUser();
+            const currentUserId = authUser?.id ?? null;
+
+            /* `users!user_id` — required when PostgREST sees multiple posts↔users paths (e.g. posts.user_id + post_likes). */
             const { data, error } = await supabase
                 .from("posts")
-                .select("id, body, created_at, hub_id, extra_tags")
+                .select("id, body, created_at, hub_id, extra_tags, user_id, users!user_id ( handle, display_name )")
                 .order("created_at", { ascending: false });
 
             if (error) {
@@ -716,10 +755,17 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
 
                 const resolvedHobbySlug = hobbySlugFromDb ?? hubNameToHobbySlug(displayHub);
 
+                const uid = typeof post.user_id === "string" ? post.user_id : String(post.user_id ?? "");
+                const { user: displayUser, handle: authorHandle } = authorFromPostRow(
+                    uid,
+                    post.users,
+                    currentUserId
+                );
+
                 return {
                     id: post.id,
-                    user: "You",
-                    handle: "@you",
+                    user: displayUser,
+                    handle: authorHandle,
                     avatar: "✨",
                     avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
                     hub: displayHub,
