@@ -4,6 +4,8 @@ import { getHubById, getCategoryById, type HubDetail, type HubItem } from "./hub
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
 import { fetchHubBySlug, hubRowToDetail } from "../lib/hubDb";
+import { supabase } from "../lib/supabase";
+import { PostCard } from "./TimelinePage";
 
 /* ------------------------------------------------------------------ */
 /*  Icons                                                              */
@@ -53,20 +55,35 @@ function ItemCard({ item, onClick }: { item: { name: string; year: string; ratin
     );
 }
 
-/* ------------------------------------------------------------------ */
-/*  Placeholder post card                                              */
-/* ------------------------------------------------------------------ */
-function PostPlaceholder() {
-    return (
-        <div
-            className="rounded-xl transition-all"
-            style={{
-                background: "var(--surface2)",
-                border: "1px solid var(--border)",
-                minHeight: "100px",
-            }}
-        />
-    );
+type HubPost = {
+    id: number;
+    body: string;
+    created_at: string;
+    user_id: string;
+    users?: { handle?: string | null; display_name?: string | null } | { handle?: string | null; display_name?: string | null }[] | null;
+};
+
+function formatTimeAgo(dateString: string): string {
+    const now = new Date();
+    const then = new Date(dateString);
+    const diffMs = now.getTime() - then.getTime();
+    const minutes = Math.floor(diffMs / (1000 * 60));
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    return `${days}d ago`;
+}
+
+function postAuthorLabel(post: HubPost): { name: string; handle: string } {
+    const profile = Array.isArray(post.users) ? post.users[0] ?? null : post.users ?? null;
+    const rawHandle = profile?.handle?.trim() ?? "";
+    const displayName = profile?.display_name?.trim() ?? "";
+    const handle = rawHandle.length > 0 ? (rawHandle.startsWith("@") ? rawHandle : `@${rawHandle}`) : `@user_${post.user_id.replace(/-/g, "").slice(0, 8)}`;
+    const name = displayName || (rawHandle ? rawHandle.replace(/^@/, "") : "") || "Member";
+    return { name, handle };
 }
 
 /* ================================================================== */
@@ -84,6 +101,9 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
     const [activeTab, setActiveTab] = useState<"recent" | "popular">("recent");
     const [dbHub, setDbHub] = useState<HubDetail | null>(null);
     const [hubLoading, setHubLoading] = useState(true);
+    const [postsLoading, setPostsLoading] = useState(true);
+    const [hubPosts, setHubPosts] = useState<HubPost[]>([]);
+    const [postsError, setPostsError] = useState<string | null>(null);
 
     const mockHub = getHubById(categoryId, hubId);
     const category = getCategoryById(categoryId);
@@ -108,6 +128,46 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
             cancelled = true;
         };
     }, [categoryId, hubId]);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadPosts = async () => {
+            setPostsLoading(true);
+            setPostsError(null);
+            const hubRow = await fetchHubBySlug(hubId);
+            if (!hubRow?.id) {
+                if (!cancelled) {
+                    setHubPosts([]);
+                    setPostsLoading(false);
+                }
+                return;
+            }
+
+            const { data, error } = await supabase
+                .from("posts")
+                .select("id, body, created_at, user_id, users!user_id ( handle, display_name )")
+                .eq("hub_id", hubRow.id)
+                .order("created_at", { ascending: activeTab === "popular" });
+
+            if (cancelled) return;
+            if (error) {
+                setHubPosts([]);
+                setPostsError(error.message);
+                setPostsLoading(false);
+                return;
+            }
+
+            setHubPosts((data ?? []) as HubPost[]);
+            setPostsLoading(false);
+        };
+
+        void loadPosts();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [hubId, activeTab]);
 
     const hub = dbHub ?? mockHub;
     const categoryName = category?.name ?? categoryId;
@@ -320,9 +380,45 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                     </div>
 
                     <div className="space-y-4">
-                        <PostPlaceholder />
-                        <PostPlaceholder />
-                        <PostPlaceholder />
+                        {postsLoading ? (
+                            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                                Loading posts…
+                            </p>
+                        ) : postsError ? (
+                            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                                Could not load posts: {postsError}
+                            </p>
+                        ) : hubPosts.length === 0 ? (
+                            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                                No posts in this hub yet.
+                            </p>
+                        ) : (
+                            hubPosts.map((post) => {
+                                const author = postAuthorLabel(post);
+                                return (
+                                    <PostCard
+                                        key={post.id}
+                                        heightClass="h-48"
+                                        post={{
+                                            id: post.id,
+                                            user: author.name,
+                                            handle: author.handle,
+                                            avatar: "✨",
+                                            avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
+                                            hub: hub.name,
+                                            hubId: hubId,
+                                            userTags: [],
+                                            hubColor: hub.gradientFrom,
+                                            time: formatTimeAgo(post.created_at),
+                                            text: post.body,
+                                            image: null,
+                                            comments: 0,
+                                            reposts: 0,
+                                        }}
+                                    />
+                                );
+                            })
+                        )}
                     </div>
                 </div>
 
