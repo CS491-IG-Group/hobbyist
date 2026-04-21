@@ -63,6 +63,20 @@ type HubPost = {
     users?: { handle?: string | null; display_name?: string | null } | { handle?: string | null; display_name?: string | null }[] | null;
 };
 
+type DbItemRow = {
+    id: number;
+    name: string;
+    item_type: string | null;
+    description: string | null;
+};
+
+type HubSidebarItem = {
+    id: number;
+    name: string;
+    year: string;
+    rating: string;
+};
+
 function formatTimeAgo(dateString: string): string {
     const now = new Date();
     const then = new Date(dateString);
@@ -93,7 +107,7 @@ interface HubPageProps {
     categoryId: string;
     hubId: string;
     onBack: () => void;
-    onSelectItem?: (itemIndex: number) => void;
+    onSelectItem?: (itemId: number) => void;
 }
 
 export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: HubPageProps) {
@@ -104,6 +118,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
     const [postsLoading, setPostsLoading] = useState(true);
     const [hubPosts, setHubPosts] = useState<HubPost[]>([]);
     const [postsError, setPostsError] = useState<string | null>(null);
+    const [hubItems, setHubItems] = useState<HubSidebarItem[]>([]);
 
     const mockHub = getHubById(categoryId, hubId);
     const category = getCategoryById(categoryId);
@@ -116,9 +131,37 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
             const mock = getHubById(categoryId, hubId);
             if (cancelled) return;
             if (row) {
-                const items: HubItem[] = mock?.items ?? [];
+                const { data: dbItems, error: dbItemsErr } = await supabase
+                    .from("items")
+                    .select("id, name, item_type, description")
+                    .eq("hub_id", row.id)
+                    .order("created_at", { ascending: false });
+
+                const items: HubItem[] = dbItemsErr
+                    ? (mock?.items ?? [])
+                    : ((dbItems ?? []) as DbItemRow[]).map((item) => ({
+                        name: item.name,
+                        year: item.item_type?.trim() || "item",
+                        rating: "N/A",
+                        description: item.description ?? "",
+                    }));
+                const sidebarItems: HubSidebarItem[] = dbItemsErr
+                    ? (mock?.items ?? []).map((item, idx) => ({
+                        id: -(idx + 1),
+                        name: item.name,
+                        year: item.year,
+                        rating: item.rating,
+                    }))
+                    : ((dbItems ?? []) as DbItemRow[]).map((item) => ({
+                        id: item.id,
+                        name: item.name,
+                        year: item.item_type?.trim() || "item",
+                        rating: "N/A",
+                    }));
+                setHubItems(sidebarItems);
                 setDbHub(hubRowToDetail(row, items));
             } else {
+                setHubItems([]);
                 setDbHub(null);
             }
             setHubLoading(false);
@@ -431,14 +474,14 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                         Items
                     </h2>
                     <div className="space-y-3">
-                        {hub.items.length === 0 ? (
+                        {hubItems.length === 0 ? (
                             <p className="text-xs" style={{ color: "var(--text-muted)" }}>
                                 No featured items yet.
                             </p>
                         ) : (
-                            hub.items.map((item, i) => (
+                            hubItems.map((item, i) => (
                                 <ItemCard
-                                    key={i}
+                                    key={item.id}
                                     item={item}
                                     onClick={() => {
                                         void logContentEvent({
@@ -450,11 +493,11 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                                                 action: "open_item",
                                                 category_id: categoryId,
                                                 hub_id: hubId,
-                                                item_index: i,
+                                                item_id: item.id,
                                                 item_name: item.name,
                                             },
                                         });
-                                        onSelectItem?.(i);
+                                        if (item.id > 0) onSelectItem?.(item.id);
                                     }}
                                 />
                             ))

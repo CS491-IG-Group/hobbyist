@@ -25,7 +25,7 @@ type SubPage =
   | null
   | { type: "category"; categoryId: string }
   | { type: "hub"; categoryId: string; hubId: string }
-  | { type: "item"; categoryId: string; hubId: string; itemIndex: number };
+  | { type: "item"; categoryId: string; hubId: string; itemId: number };
 
 interface Props {
   onLogout: () => void;
@@ -431,7 +431,7 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
             <ItemDetailPage
               categoryId={subPage.categoryId}
               hubId={subPage.hubId}
-              itemIndex={subPage.itemIndex}
+              itemId={subPage.itemId}
               onBack={() => setSubPage({ type: "hub", categoryId: subPage.categoryId, hubId: subPage.hubId })}
             />
           ) : subPage?.type === "hub" ? (
@@ -439,8 +439,8 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
               categoryId={subPage.categoryId}
               hubId={subPage.hubId}
               onBack={() => setSubPage({ type: "category", categoryId: subPage.categoryId })}
-              onSelectItem={(itemIndex) =>
-                setSubPage({ type: "item", categoryId: subPage.categoryId, hubId: subPage.hubId, itemIndex })
+              onSelectItem={(itemId) =>
+                setSubPage({ type: "item", categoryId: subPage.categoryId, hubId: subPage.hubId, itemId })
               }
             />
           ) : subPage?.type === "category" ? (
