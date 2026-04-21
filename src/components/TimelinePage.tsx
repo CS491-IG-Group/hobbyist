@@ -3,193 +3,83 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import HubPage from "./HubsProfile";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
-import { fetchRecommendationContext, rankTimelinePosts, type UserAffinity } from "../lib/recommendations";
+import { fetchRecommendationContext, rankTimelinePosts, type UserAffinity, type RankableTimelinePost } from "../lib/recommendations";
 import { supabase } from "../lib/supabase";
 import { fetchAllHubs, type HubRow } from "../lib/hubDb";
 import { hubNameToHobbySlug } from "../lib/hubHobbyMap";
 import { mergePostTags, normalizeTag } from "../lib/hubTags";
 
+interface TimelinePost extends RankableTimelinePost {
+    hubId: string | null;
+    avatar: string;
+    avatarBg: string;
+    userTags: string[];
+    hubColor: string;
+    time: string;
+    text: string;
+    image: string | null;
+    comments: number;
+    reposts: number;
+}
+
 /** Selected hub name → `public.hubs.id` (primary key), same list as the compose UI. */
 function resolveHubRowForName(hubName: string, rows: HubRow[]): HubRow | null {
-  return rows.find((h) => h.name === hubName) ?? null;
+    return rows.find((h) => h.name === hubName) ?? null;
 }
 
 /** `posts.user_id` FK requires a row in public.users; signup trigger may be missing in some DBs. */
 async function ensurePublicUserRow(user: { id: string; email?: string | null }): Promise<{ ok: boolean; message?: string }> {
-  const { data, error: selErr } = await supabase.from("users").select("id").eq("id", user.id).maybeSingle();
-  if (selErr && process.env.NODE_ENV === "development") {
-    console.warn("[ensurePublicUserRow] select failed", selErr.message);
-  }
-  if (data) return { ok: true };
+    const { data, error: selErr } = await supabase.from("users").select("id").eq("id", user.id).maybeSingle();
+    if (selErr && process.env.NODE_ENV === "development") {
+        console.warn("[ensurePublicUserRow] select failed", selErr.message);
+    }
+    if (data) return { ok: true };
 
-  const { error: insErr } = await supabase.from("users").insert({ id: user.id, email: user.email ?? null });
-  if (!insErr) return { ok: true };
-  /* Race: trigger created the row between select and insert */
-  if (insErr.code === "23505") return { ok: true };
+    const { error: insErr } = await supabase.from("users").insert({ id: user.id, email: user.email ?? null });
+    if (!insErr) return { ok: true };
+    if (insErr.code === "23505") return { ok: true };
 
-  console.error("[ensurePublicUserRow] insert failed", insErr.message);
-  return { ok: false, message: insErr.message };
+    console.error("[ensurePublicUserRow] insert failed", insErr.message);
+    return { ok: false, message: insErr.message };
 }
 
-/** Map `posts` + joined `public.users` to timeline `user` / `handle` (handle used for ranking + analytics). */
+/** Map `posts` + joined `public.users` to timeline `user` / `handle` */
 function authorFromPostRow(
-  userId: string,
-  usersEmbed:
-    | { handle: string | null; display_name: string | null }
-    | { handle: string | null; display_name: string | null }[]
-    | null
-    | undefined,
-  currentUserId: string | null
+    userId: string,
+    usersEmbed: any,
+    currentUserId: string | null
 ): { user: string; handle: string } {
-  const profile = Array.isArray(usersEmbed) ? usersEmbed[0] ?? null : usersEmbed ?? null;
-  const trimmedHandle = profile?.handle?.trim() ?? "";
-  const displayName = profile?.display_name?.trim() ?? "";
-  const atHandle =
-    trimmedHandle.length > 0
-      ? trimmedHandle.startsWith("@")
-        ? trimmedHandle
-        : `@${trimmedHandle}`
-      : `@user_${userId.replace(/-/g, "").slice(0, 8)}`;
+    const profile = Array.isArray(usersEmbed) ? usersEmbed[0] ?? null : usersEmbed ?? null;
+    const trimmedHandle = profile?.handle?.trim() ?? "";
+    const displayName = profile?.display_name?.trim() ?? "";
+    const atHandle =
+        trimmedHandle.length > 0
+            ? trimmedHandle.startsWith("@")
+                ? trimmedHandle
+                : `@${trimmedHandle}`
+            : `@user_${userId.replace(/-/g, "").slice(0, 8)}`;
 
-  const isSelf = currentUserId != null && userId === currentUserId;
-  if (isSelf) {
-    return { user: "You", handle: atHandle };
-  }
+    const isSelf = currentUserId != null && userId === currentUserId;
+    if (isSelf) return { user: "You", handle: atHandle };
 
-  const label =
-    displayName ||
-    (trimmedHandle ? trimmedHandle.replace(/^@/, "") : "") ||
-    "Member";
-
-  return { user: label, handle: atHandle };
+    const label = displayName || (trimmedHandle ? trimmedHandle.replace(/^@/, "") : "") || "Member";
+    return { user: label, handle: atHandle };
 }
 
 function postAnalyticsMeta(
-  post: { hub: string; handle: string; id: number; tags?: string[] },
-  extra: Record<string, unknown> = {}
+    post: { hub: string; handle: string; id: number; tags?: string[] },
+    extra: Record<string, unknown> = {}
 ) {
-  const hobby_slug = hubNameToHobbySlug(post.hub);
-  return {
-    ...extra,
-    hub: post.hub,
-    author_handle: post.handle,
-    client_post_id: post.id,
-    tags: post.tags ?? [],
-    ...(hobby_slug ? { hobby_slug } : {}),
-  };
-}
-
-const POSTS_RAW = [
-    {
-        id: 1,
-        user: "Alex Rivera",
-        handle: "@alexrivera",
-        avatar: "🚗",
-        avatarBg: "linear-gradient(135deg, #1e1b4b, #1e40af)",
-        hub: "Cars",
-        hubColor: "#3b82f6",
-        time: "2m ago",
-        text: "Just got back from a track day in my STI and nothing beats a perfectly executed apex. The car is an absolute weapon when you dial in the suspension right 🔧🏁",
-        image: "https://images.unsplash.com/photo-1544636331-e26879cd4d9b?w=800&auto=format&fit=crop",
-        likes: 214,
-        comments: 53,
-        reposts: 28,
-        postTags: ["subaru", "track-day", "suspension"],
-    },
-    {
-        id: 2,
-        user: "Jordan Lee",
-        handle: "@jordanlee",
-        avatar: "💪",
-        avatarBg: "linear-gradient(135deg, #064e3b, #065f46)",
-        hub: "Fitness",
-        hubColor: "#10b981",
-        time: "15m ago",
-        text: "Finally hit a 200kg deadlift after 2 years of consistent training. The grind is real but moments like this make it all worth it. Trust the process 💚",
-        image: "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&auto=format&fit=crop",
-        likes: 389,
-        comments: 74,
-        reposts: 45,
-        postTags: ["deadlift", "powerlifting"],
-    },
-    {
-        id: 3,
-        user: "Sam Chen",
-        handle: "@samchen",
-        avatar: "💻",
-        avatarBg: "linear-gradient(135deg, #1c1917, #44403c)",
-        hub: "Technology",
-        hubColor: "#f59e0b",
-        time: "1h ago",
-        text: "The new M4 MacBook Pro benchmarks are wild. Single core scores beating workstation chips from 2 years ago. Apple Silicon is genuinely changing the game for developers 🚀",
-        image: null,
-        likes: 512,
-        comments: 118,
-        reposts: 89,
-        postTags: ["macbook", "benchmarks"],
-    },
-    {
-        id: 4,
-        user: "Maya Patel",
-        handle: "@mayapatel",
-        avatar: "🎬",
-        avatarBg: "linear-gradient(135deg, #831843, #9d174d)",
-        hub: "Movies",
-        hubColor: "#ec4899",
-        time: "2h ago",
-        text: "Dune Part 2 is a cinematic masterpiece. Villeneuve is operating on a completely different level. The IMAX experience was absolutely breathtaking 🎥✨",
-        image: "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=800&auto=format&fit=crop",
-        likes: 631,
-        comments: 142,
-        reposts: 97,
-        postTags: ["dune", "villeneuve"],
-    },
-    {
-        id: 5,
-        user: "Chris Booker",
-        handle: "@chrisbooker",
-        avatar: "📸",
-        avatarBg: "linear-gradient(135deg, #1e3a5f, #1e40af)",
-        hub: "Photography",
-        hubColor: "#6366f1",
-        time: "3h ago",
-        text: "Golden hour in the mountains hit different this weekend. Shot on film with my Contax T2 — there is something about analog photography that digital just cannot replicate 🌄",
-        image: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&auto=format&fit=crop",
-        likes: 428,
-        comments: 63,
-        reposts: 51,
-        postTags: ["contax", "mountains"],
-    },
-    {
-        id: 6,
-        user: "Taylor Kim",
-        handle: "@taylorkim",
-        avatar: "🍳",
-        avatarBg: "linear-gradient(135deg, #14532d, #166534)",
-        hub: "Cooking",
-        hubColor: "#ef4444",
-        time: "5h ago",
-        text: "Made homemade ramen from scratch — 12 hours for the tonkotsu broth and worth every minute. The depth of flavor is insane compared to anything store bought 🍜🔥",
-        image: "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=800&auto=format&fit=crop",
-        likes: 295,
-        comments: 67,
-        reposts: 38,
-        postTags: ["ramen", "tonkotsu"],
-    },
-];
-
-const POSTS = POSTS_RAW.map((p) => {
-    const { postTags, ...rest } = p;
-    const userTags = [...postTags].map(normalizeTag).filter(Boolean);
+    const hobby_slug = hubNameToHobbySlug(post.hub);
     return {
-        ...rest,
-        hobbySlug: hubNameToHobbySlug(rest.hub),
-        /** Full set for ranking / analytics (hub defaults + hobby + extras). */
-        tags: mergePostTags(rest.hub, userTags),
-        /** Shown under the card — author-added only (no synthetic hub defaults). */
-        userTags,
+        ...extra,
+        hub: post.hub,
+        author_handle: post.handle,
+        client_post_id: post.id,
+        tags: post.tags ?? [],
+        ...(hobby_slug ? { hobby_slug } : {}),
     };
-});
+}
 
 const MAX_EXTRA_TAGS = 8;
 const MAX_TAG_LEN = 32;
@@ -215,20 +105,13 @@ function CommentIcon() {
     );
 }
 
-// Assign a random-ish height class per post so masonry looks varied
 const HEIGHT_CLASSES = ["h-48", "h-56", "h-64", "h-72", "h-52", "h-60"];
 
-type TimelinePost = typeof POSTS[0] & { hubId?: string | null };
-
-interface PostCardProps {
-    post: TimelinePost;
-    heightClass: string;
-}
-
-function PostCard({ post, heightClass }: PostCardProps) {
+function PostCard({ post, heightClass }: { post: any; heightClass: string }) {
     const { userId, sessionId } = useAnalytics();
-    const [liked, setLiked] = useState(false);
-    const [likeCount, setLikeCount] = useState(post.likes);
+    const [isLiked, setIsLiked] = useState(false);
+    const [likeCount, setLikeCount] = useState(0);
+    const [commentCount, setCommentCount] = useState(0);
     const [saved, setSaved] = useState(false);
     const [hovered, setHovered] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
@@ -242,231 +125,94 @@ function PostCard({ post, heightClass }: PostCardProps) {
         metadata: postAnalyticsMeta(post, { kind: "post_impression" }),
     });
 
+    // Fetch real data on mount
     useEffect(() => {
-        if (!menuOpen) return;
-        const close = (e: MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+        const fetchStats = async () => {
+            // Get Likes
+            const { count: likes, data: likesData } = await supabase
+                .from('post_likes')
+                .select('*', { count: 'exact' })
+                .eq('post_id', post.id);
+
+            // Get Comments
+            const { count: comments } = await supabase
+                .from('comments')
+                .select('*', { count: 'exact', head: true })
+                .eq('post_id', post.id);
+
+            setLikeCount(likes || 0);
+            setCommentCount(comments || 0);
+            setIsLiked(likesData?.some(l => l.user_id === userId) ?? false);
         };
-        document.addEventListener("click", close);
-        return () => document.removeEventListener("click", close);
-    }, [menuOpen]);
+        if (userId) fetchStats();
+    }, [post.id, userId]);
 
     const handleLike = async (e: React.MouseEvent) => {
         e.stopPropagation();
-        setLiked(!liked);
-        setLikeCount(liked ? likeCount - 1 : likeCount + 1);
-        await logContentEvent({
-            userId,
-            sessionId,
-            eventType: "like",
-            postId: post.id,
-            uiLocation: "timeline",
-            metadata: postAnalyticsMeta(post),
-        });
+
+        // Optimistic UI
+        const previousLiked = isLiked;
+        setIsLiked(!previousLiked);
+        setLikeCount(previousLiked ? likeCount - 1 : likeCount + 1);
+
+        if (previousLiked) {
+            await supabase.from('post_likes').delete().eq('post_id', post.id).eq('user_id', userId);
+        } else {
+            await supabase.from('post_likes').insert({ post_id: post.id, user_id: userId });
+        }
+
+        await logContentEvent({ userId, sessionId, eventType: "like", postId: post.id, uiLocation: "timeline", metadata: postAnalyticsMeta(post) });
     };
 
-    const toggleSave = async (e: React.MouseEvent) => {
-        e.stopPropagation();
-        const next = !saved;
-        setSaved(next);
-        await logContentEvent({
-            userId,
-            sessionId,
-            eventType: next ? "save" : "unsave",
-            postId: post.id,
-            uiLocation: "timeline",
-            metadata: postAnalyticsMeta(post),
-        });
-    };
-
-    const logHideOrReport = async (kind: "hide" | "report") => {
-        setMenuOpen(false);
-        await logContentEvent({
-            userId,
-            sessionId,
-            eventType: kind,
-            postId: post.id,
-            uiLocation: "timeline",
-            metadata: postAnalyticsMeta(post),
-        });
-    };
-
-    // Text-only posts get a colored gradient background
     const isTextOnly = !post.image;
     const userTagsChips = post.userTags ?? [];
 
     return (
-        <div
-            ref={impressionRef}
-            className="break-inside-avoid mb-4 rounded-2xl overflow-hidden cursor-pointer group relative"
-            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
-            onClick={() => {
-                void logContentEvent({
-                    userId,
-                    sessionId,
-                    eventType: "click",
-                    uiLocation: "timeline",
-                    postId: post.id,
-                    metadata: postAnalyticsMeta(post, { action: "post_card_tap" }),
-                });
-            }}
-            onMouseEnter={() => setHovered(true)}
-            onMouseLeave={() => setHovered(false)}>
-
-            {/* Image or colored block */}
+        <div ref={impressionRef} className="break-inside-avoid mb-4 rounded-2xl overflow-hidden cursor-pointer group relative" style={{ background: "var(--surface)", border: "1px solid var(--border)" }} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
             <div className={`relative ${isTextOnly ? "h-36" : heightClass} overflow-hidden`}>
                 {post.image ? (
-                    <img
-                        src={post.image}
-                        alt=""
-                        className="w-full h-full object-cover transition-transform duration-500"
-                        style={{ transform: hovered ? "scale(1.05)" : "scale(1)" }}
-                    />
+                    <img src={post.image} alt="" className="w-full h-full object-cover transition-transform duration-500" style={{ transform: hovered ? "scale(1.05)" : "scale(1)" }} />
                 ) : (
-                    <div className="w-full h-full flex items-center justify-center p-5"
-                        style={{ background: `linear-gradient(135deg, ${post.hubColor}30, ${post.hubColor}10)` }}>
-                        <p className="text-sm font-medium text-center leading-relaxed"
-                            style={{ color: "var(--text)", fontFamily: "Syne, sans-serif" }}>
-                            {post.text}
-                        </p>
+                    <div className="w-full h-full flex items-center justify-center p-5" style={{ background: `linear-gradient(135deg, ${post.hubColor}30, ${post.hubColor}10)` }}>
+                        <p className="text-sm font-medium text-center">{post.text}</p>
                     </div>
                 )}
 
-                {/* Hub pill — top left */}
                 <div className="absolute top-2.5 left-2.5">
-                    <span className="text-[10px] font-bold px-2 py-1 rounded-full backdrop-blur-md"
-                        style={{
-                            background: `${post.hubColor}cc`,
-                            color: "#fff",
-                            boxShadow: `0 2px 8px ${post.hubColor}60`,
-                        }}>
-                        {post.hub}
-                    </span>
+                    <span className="text-[10px] font-bold px-2 py-1 rounded-full backdrop-blur-md" style={{ background: `${post.hubColor}cc`, color: "#fff" }}>{post.hub}</span>
                 </div>
 
-                {/* Actions — top right */}
-                <div
-                    className="absolute top-2.5 right-2.5 flex items-center gap-1 transition-all"
-                    style={{
-                        opacity: hovered || menuOpen || saved ? 1 : 0,
-                        transform: hovered || menuOpen ? "scale(1)" : "scale(0.85)",
-                    }}
-                    onClick={e => e.stopPropagation()}>
-                    <button
-                        onClick={toggleSave}
-                        className="w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md text-xs"
-                        style={{
-                            background: saved ? "rgba(167,139,250,0.85)" : "rgba(0,0,0,0.45)",
-                            color: "#fff",
-                        }}
-                        title={saved ? "Saved" : "Save"}>
-                        {saved ? "✓" : "🔖"}
+                <div className="absolute top-2.5 right-2.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                    <button onClick={handleLike} className="w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md" style={{ background: isLiked ? "#ec489980" : "rgba(0,0,0,0.45)" }}>
+                        <HeartIcon filled={isLiked} />
                     </button>
-                    <button
-                        onClick={handleLike}
-                        className="w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md"
-                        style={{
-                            background: liked ? "#ec489980" : "rgba(0,0,0,0.45)",
-                            color: liked ? "#fff" : "rgba(255,255,255,0.8)",
-                        }}>
-                        <HeartIcon filled={liked} />
-                    </button>
-                    <div className="relative" ref={menuRef}>
-                        <button
-                            type="button"
-                            onClick={e => { e.stopPropagation(); setMenuOpen(v => !v); }}
-                            className="w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md text-white text-sm font-bold"
-                            style={{ background: "rgba(0,0,0,0.45)" }}>
-                            ···
-                        </button>
-                        {menuOpen && (
-                            <div
-                                className="absolute right-0 mt-1 py-1 rounded-lg text-left min-w-[132px] z-20 shadow-lg"
-                                style={{ background: "var(--surface)", border: "1px solid var(--border)" }}>
-                                <button
-                                    type="button"
-                                    className="block w-full text-left text-xs px-3 py-2 hover:opacity-80"
-                                    style={{ color: "var(--text)" }}
-                                    onClick={e => { e.stopPropagation(); void logHideOrReport("hide"); }}>
-                                    Hide / not interested
-                                </button>
-                                <button
-                                    type="button"
-                                    className="block w-full text-left text-xs px-3 py-2 hover:opacity-80"
-                                    style={{ color: "#f87171" }}
-                                    onClick={e => { e.stopPropagation(); void logHideOrReport("report"); }}>
-                                    Report
-                                </button>
-                            </div>
-                        )}
-                    </div>
                 </div>
             </div>
 
-            {/* Caption + user info below image */}
             <div className="px-3 pt-3 pb-3">
-                {/* Show caption only for image posts (text-only already shows it in the card) */}
-                {post.image && (
-                    <p className="text-xs leading-relaxed mb-2.5 line-clamp-2"
-                        style={{ color: "var(--text-dim)" }}>
-                        {post.text}
-                    </p>
-                )}
+                {post.image && <p className="text-xs leading-relaxed mb-2.5 line-clamp-2" style={{ color: "var(--text-dim)" }}>{post.text}</p>}
 
-                {userTagsChips.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mb-2">
-                        {userTagsChips.slice(0, MAX_EXTRA_TAGS).map((t) => (
-                            <span
-                                key={t}
-                                className="text-[9px] font-medium px-1.5 py-0.5 rounded-md"
-                                style={{
-                                    color: "var(--text-muted)",
-                                    background: "var(--surface2)",
-                                    border: "1px solid var(--border)",
-                                }}>
-                                {t}
-                            </span>
-                        ))}
-                    </div>
-                )}
-
-                {/* User row */}
-                <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-6 h-6 rounded-lg flex items-center justify-center text-xs shrink-0"
-                            style={{ background: post.avatarBg }}>
-                            {post.avatar}
-                        </div>
-                        <div className="min-w-0">
-                            <p className="text-xs font-semibold truncate" style={{ color: "var(--text)" }}>{post.user}</p>
-                            <p className="text-[10px] truncate" style={{ color: "var(--text-muted)" }}>{post.time}</p>
+                <div className="flex items-center justify-between gap-2 mt-2">
+                    <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg flex items-center justify-center text-xs" style={{ background: post.avatarBg }}>{post.avatar}</div>
+                        <div>
+                            <p className="text-xs font-semibold">{post.user}</p>
                         </div>
                     </div>
-
-                    {/* Stats */}
-                    <div className="flex items-center gap-2.5 shrink-0">
-                        <span className="flex items-center gap-1 text-[10px]"
-                            style={{ color: liked ? "#ec4899" : "var(--text-muted)" }}>
-                            <HeartIcon filled={liked} />
-                            {likeCount}
-                        </span>
+                    <div className="flex items-center gap-3">
                         <button
-                            type="button"
-                            onClick={e => {
-                                e.stopPropagation();
-                                void logContentEvent({
-                                    userId,
-                                    sessionId,
-                                    eventType: "click",
-                                    uiLocation: "timeline",
-                                    postId: post.id,
-                                    metadata: postAnalyticsMeta(post, { action: "comment_button_tap" }),
-                                });
-                            }}
-                            className="flex items-center gap-1 text-[10px]"
-                            style={{ color: "var(--text-muted)" }}>
-                            <CommentIcon />
-                            {post.comments}
+                            onClick={handleLike}
+                            className="flex items-center gap-1 text-[10px] transition-colors hover:opacity-80"
+                            style={{ color: isLiked ? "#ec4899" : "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                        >
+                            <HeartIcon filled={isLiked} /> {likeCount}
+                        </button>
+                        <button
+                            className="flex items-center gap-1 text-[10px] transition-colors hover:opacity-80"
+                            style={{ color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <CommentIcon /> {commentCount}
                         </button>
                     </div>
                 </div>
@@ -773,8 +519,8 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                         typeof post.hub_id === "string"
                             ? post.hub_id
                             : post.hub_id != null
-                              ? String(post.hub_id)
-                              : null,
+                                ? String(post.hub_id)
+                                : null,
                     hobbySlug: resolvedHobbySlug,
                     tags: mergePostTags(displayHub, storedExtras, hobbySlugFromDb),
                     userTags: storedExtras,
