@@ -5,6 +5,8 @@ import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
 import { fetchHubBySlug, hubRowToDetail } from "../lib/hubDb";
 import { joinHub, leaveHub, fetchUserHubSlugs } from "../lib/hubDb";
+import { supabase } from "../lib/supabase";
+import { PostCard } from "./TimelinePage";
 
 /* ------------------------------------------------------------------ */
 /*  Icons                                                              */
@@ -54,20 +56,49 @@ function ItemCard({ item, onClick }: { item: { name: string; year: string; ratin
     );
 }
 
-/* ------------------------------------------------------------------ */
-/*  Placeholder post card                                              */
-/* ------------------------------------------------------------------ */
-function PostPlaceholder() {
-    return (
-        <div
-            className="rounded-xl transition-all"
-            style={{
-                background: "var(--surface2)",
-                border: "1px solid var(--border)",
-                minHeight: "100px",
-            }}
-        />
-    );
+type HubPost = {
+    id: number;
+    body: string;
+    created_at: string;
+    user_id: string;
+    users?: { handle?: string | null; display_name?: string | null } | { handle?: string | null; display_name?: string | null }[] | null;
+};
+
+type DbItemRow = {
+    id: number;
+    name: string;
+    item_type: string | null;
+    description: string | null;
+};
+
+type HubSidebarItem = {
+    id: number;
+    name: string;
+    year: string;
+    rating: string;
+};
+
+function formatTimeAgo(dateString: string): string {
+    const now = new Date();
+    const then = new Date(dateString);
+    const diffMs = now.getTime() - then.getTime();
+    const minutes = Math.floor(diffMs / (1000 * 60));
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    return `${days}d ago`;
+}
+
+function postAuthorLabel(post: HubPost): { name: string; handle: string } {
+    const profile = Array.isArray(post.users) ? post.users[0] ?? null : post.users ?? null;
+    const rawHandle = profile?.handle?.trim() ?? "";
+    const displayName = profile?.display_name?.trim() ?? "";
+    const handle = rawHandle.length > 0 ? (rawHandle.startsWith("@") ? rawHandle : `@${rawHandle}`) : `@user_${post.user_id.replace(/-/g, "").slice(0, 8)}`;
+    const name = displayName || (rawHandle ? rawHandle.replace(/^@/, "") : "") || "Member";
+    return { name, handle };
 }
 
 /* ================================================================== */
@@ -77,7 +108,7 @@ interface HubPageProps {
     categoryId: string;
     hubId: string;
     onBack: () => void;
-    onSelectItem?: (itemIndex: number) => void;
+    onSelectItem?: (itemId: number) => void;
 }
 
 export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: HubPageProps) {
@@ -86,6 +117,11 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
     const [dbHub, setDbHub] = useState<HubDetail | null>(null);
     const [hubLoading, setHubLoading] = useState(true);
     const [isJoined, setIsJoined] = useState(false);
+    const [postsLoading, setPostsLoading] = useState(true);
+    const [hubPosts, setHubPosts] = useState<HubPost[]>([]);
+    const [postsError, setPostsError] = useState<string | null>(null);
+    const [hubItems, setHubItems] = useState<HubSidebarItem[]>([]);
+
     const mockHub = getHubById(categoryId, hubId);
     const category = getCategoryById(categoryId);
 
@@ -97,9 +133,37 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
             const mock = getHubById(categoryId, hubId);
             if (cancelled) return;
             if (row) {
-                const items: HubItem[] = mock?.items ?? [];
+                const { data: dbItems, error: dbItemsErr } = await supabase
+                    .from("items")
+                    .select("id, name, item_type, description")
+                    .eq("hub_id", row.id)
+                    .order("created_at", { ascending: false });
+
+                const items: HubItem[] = dbItemsErr
+                    ? (mock?.items ?? [])
+                    : ((dbItems ?? []) as DbItemRow[]).map((item) => ({
+                        name: item.name,
+                        year: item.item_type?.trim() || "item",
+                        rating: "N/A",
+                        description: item.description ?? "",
+                    }));
+                const sidebarItems: HubSidebarItem[] = dbItemsErr
+                    ? (mock?.items ?? []).map((item, idx) => ({
+                        id: -(idx + 1),
+                        name: item.name,
+                        year: item.year,
+                        rating: item.rating,
+                    }))
+                    : ((dbItems ?? []) as DbItemRow[]).map((item) => ({
+                        id: item.id,
+                        name: item.name,
+                        year: item.item_type?.trim() || "item",
+                        rating: "N/A",
+                    }));
+                setHubItems(sidebarItems);
                 setDbHub(hubRowToDetail(row, items));
             } else {
+                setHubItems([]);
                 setDbHub(null);
             }
             setHubLoading(false);
@@ -127,6 +191,49 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
             if (error) throw new Error(error);
         }
     };
+
+
+
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadPosts = async () => {
+            setPostsLoading(true);
+            setPostsError(null);
+            const hubRow = await fetchHubBySlug(hubId);
+            if (!hubRow?.id) {
+                if (!cancelled) {
+                    setHubPosts([]);
+                    setPostsLoading(false);
+                }
+                return;
+            }
+
+            const { data, error } = await supabase
+                .from("posts")
+                .select("id, body, created_at, user_id, users!user_id ( handle, display_name )")
+                .eq("hub_id", hubRow.id)
+                .order("created_at", { ascending: activeTab === "popular" });
+
+            if (cancelled) return;
+            if (error) {
+                setHubPosts([]);
+                setPostsError(error.message);
+                setPostsLoading(false);
+                return;
+            }
+
+            setHubPosts((data ?? []) as HubPost[]);
+            setPostsLoading(false);
+        };
+
+        void loadPosts();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [hubId, activeTab]);
 
 
     const hub = dbHub ?? mockHub;
@@ -329,9 +436,45 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                     </div>
 
                     <div className="space-y-4">
-                        <PostPlaceholder />
-                        <PostPlaceholder />
-                        <PostPlaceholder />
+                        {postsLoading ? (
+                            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                                Loading posts…
+                            </p>
+                        ) : postsError ? (
+                            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                                Could not load posts: {postsError}
+                            </p>
+                        ) : hubPosts.length === 0 ? (
+                            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                                No posts in this hub yet.
+                            </p>
+                        ) : (
+                            hubPosts.map((post) => {
+                                const author = postAuthorLabel(post);
+                                return (
+                                    <PostCard
+                                        key={post.id}
+                                        heightClass="h-48"
+                                        post={{
+                                            id: post.id,
+                                            user: author.name,
+                                            handle: author.handle,
+                                            avatar: "✨",
+                                            avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
+                                            hub: hub.name,
+                                            hubId: hubId,
+                                            userTags: [],
+                                            hubColor: hub.gradientFrom,
+                                            time: formatTimeAgo(post.created_at),
+                                            text: post.body,
+                                            image: null,
+                                            comments: 0,
+                                            reposts: 0,
+                                        }}
+                                    />
+                                );
+                            })
+                        )}
                     </div>
                 </div>
 
@@ -344,14 +487,14 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                         Items
                     </h2>
                     <div className="space-y-3">
-                        {hub.items.length === 0 ? (
+                        {hubItems.length === 0 ? (
                             <p className="text-xs" style={{ color: "var(--text-muted)" }}>
                                 No featured items yet.
                             </p>
                         ) : (
-                            hub.items.map((item, i) => (
+                            hubItems.map((item, i) => (
                                 <ItemCard
-                                    key={i}
+                                    key={item.id}
                                     item={item}
                                     onClick={() => {
                                         void logContentEvent({
@@ -363,11 +506,11 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                                                 action: "open_item",
                                                 category_id: categoryId,
                                                 hub_id: hubId,
-                                                item_index: i,
+                                                item_id: item.id,
                                                 item_name: item.name,
                                             },
                                         });
-                                        onSelectItem?.(i);
+                                        if (item.id > 0) onSelectItem?.(item.id);
                                     }}
                                 />
                             ))

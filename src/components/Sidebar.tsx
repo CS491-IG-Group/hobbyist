@@ -61,6 +61,14 @@ function PersonIcon() {
   );
 }
 
+function MessageSquareIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    </svg>
+  );
+}
+
 function BellIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -130,6 +138,7 @@ export default function Sidebar({ activeNav, setActiveNav, onLogout, onSelectHub
     { id: "timeline", label: "timeline", icon: <HomeIcon /> },
     { id: "orbit", label: "orbit", icon: <OrbitIcon /> },
     { id: "discover", label: "discover", icon: <CompassIcon /> },
+    { id: "assistant", label: "assistant", icon: <MessageSquareIcon /> },
     { id: "notifications", label: "alerts", icon: <BellIcon /> },
     { id: "profile", label: "profile", icon: <PersonIcon /> },
   ];

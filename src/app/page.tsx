@@ -4,6 +4,7 @@ import type { Session } from "@supabase/supabase-js";
 import LoginPage from "@/components/LoginPage";
 import DashboardPage from "@/components/DashboardPage";
 import OnboardingModal from "@/components/OnboardingModal";
+import OrbitBackground from "@/components/OrbitBackground";
 import { supabase } from "@/lib/supabase";
 import { withTimeout } from "@/lib/withTimeout";
 
@@ -14,14 +15,23 @@ interface OnboardingUser {
   email: string;
 }
 
-const SESSION_MS = 12_000;
-const PROFILE_MS = 12_000;
-const PROFILE_FETCH_ATTEMPTS = 3;
+const SESSION_MS = 5_000;
+const PROFILE_MS = 5_000;
+const PROFILE_FETCH_ATTEMPTS = 2;
 
 interface UsersProfileRow {
   onboarding_completed: boolean | null;
   display_name: string | null;
   handle: string | null;
+}
+
+function AuthenticatedShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative min-h-screen overflow-hidden" style={{ background: "var(--bg)" }}>
+      <OrbitBackground />
+      <div className="relative z-10 min-h-screen">{children}</div>
+    </div>
+  );
 }
 
 /** True if the wizard finished, or the user already filled a public profile elsewhere (e.g. Edit profile). */
@@ -74,17 +84,20 @@ async function loadUsersProfile(userId: string): Promise<
 }
 
 export default function Home() {
-  const [view, setView] = useState<View>("loading");
+  const [view, setView] = useState<View>("login");
   const [onboardingUser, setOnboardingUser] = useState<OnboardingUser | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const applySession = useCallback(async (session: Session | null) => {
     if (!session) {
+      setCurrentUserId(null);
       setOnboardingUser(null);
       setView("login");
       return;
     }
 
     const user = session.user;
+    setCurrentUserId(user.id);
     const result = await loadUsersProfile(user.id);
 
     if (result.status === "failed") {
@@ -144,19 +157,6 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, [applySession]);
 
-  useEffect(() => {
-    const id = window.setTimeout(() => {
-      setView((v) => {
-        if (v !== "loading") return v;
-        if (process.env.NODE_ENV === "development") {
-          console.warn("[auth] loading exceeded 20s — showing login (check Supabase URL, network, users table)");
-        }
-        return "login";
-      });
-    }, 20_000);
-    return () => clearTimeout(id);
-  }, []);
-
   async function handleLogout() {
     await supabase.auth.signOut();
     setOnboardingUser(null);
@@ -181,10 +181,10 @@ export default function Home() {
   // Show the dashboard behind the modal so the transition feels seamless
   if (view === "onboarding" && onboardingUser) {
     return (
-      <>
+      <AuthenticatedShell>
         {/* Blurred dashboard shell so user sees they're almost in */}
         <div style={{ filter: "blur(2px)", pointerEvents: "none", userSelect: "none" }}>
-          <DashboardPage onLogout={handleLogout} />
+          <DashboardPage onLogout={handleLogout} authUserId={currentUserId} />
         </div>
         <OnboardingModal
           userId={onboardingUser.id}
@@ -194,10 +194,14 @@ export default function Home() {
             setView("dashboard");
           }}
         />
-      </>
+      </AuthenticatedShell>
     );
   }
 
   // ── Dashboard ────────────────────────────────────────────────────────
-  return <DashboardPage onLogout={handleLogout} />;
+  return (
+    <AuthenticatedShell>
+      <DashboardPage onLogout={handleLogout} authUserId={currentUserId} />
+    </AuthenticatedShell>
+  );
 }
