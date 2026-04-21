@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
+import { PostCard } from "./TimelinePage";
 
 const HUBS = [
     { name: "Cars", color: "#3b82f6", emoji: "🚗" },
@@ -22,23 +23,13 @@ const BADGES = [
     { icon: "👾", label: "Early Adopter", desc: "Joined at launch" },
 ];
 
-const POSTS = [
-    {
-        tag: "Cars", tagColor: "#3b82f6",
-        text: "Just got back from a track day in my STI. Nothing beats a perfectly executed apex 🔧🏁",
-        likes: 214, time: "2h ago",
-    },
-    {
-        tag: "Fitness", tagColor: "#10b981",
-        text: "Finally hit a 200kg deadlift after 2 years of training. Trust the process 💪",
-        likes: 389, time: "1d ago",
-    },
-    {
-        tag: "Photography", tagColor: "#6366f1",
-        text: "Golden hour in the mountains hit different. Shot entirely on film with my Contax T2 🌄",
-        likes: 428, time: "3d ago",
-    },
-];
+type ProfilePost = {
+    id: number;
+    body: string;
+    created_at: string;
+    hub_name: string;
+    hub_color: string;
+};
 
 // ─── Field component ──────────────────────────────────────────────────────────
 function Field({
@@ -361,6 +352,9 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
     const [showEditModal, setShowEditModal] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
     const [profile, setProfile] = useState<ProfileData>({ display_name: "", handle: "", email: "", bio: "" });
+    const [authoredPosts, setAuthoredPosts] = useState<ProfilePost[]>([]);
+    const [postsLoading, setPostsLoading] = useState(true);
+    const [postsError, setPostsError] = useState<string | null>(null);
     const profileDwellRef = useContentImpression({
         userId: analyticsUserId,
         sessionId,
@@ -377,6 +371,20 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
             metadata: { screen: "profile_main" },
         });
     }, [analyticsUserId, sessionId]);
+
+    const formatTimeAgo = (dateString: string) => {
+        const now = new Date();
+        const then = new Date(dateString);
+        const diffMs = now.getTime() - then.getTime();
+        const minutes = Math.floor(diffMs / (1000 * 60));
+        const hours = Math.floor(diffMs / (1000 * 60 * 60));
+        const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+        if (minutes < 1) return "Just now";
+        if (minutes < 60) return `${minutes}m ago`;
+        if (hours < 24) return `${hours}h ago`;
+        return `${days}d ago`;
+    };
 
     // Load current user on mount
     useEffect(() => {
@@ -399,6 +407,35 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
                     bio: data.bio ?? "",
                 });
             }
+
+            setPostsLoading(true);
+            setPostsError(null);
+            const { data: postsData, error: postsErr } = await supabase
+                .from("posts")
+                .select("id, body, created_at, hubs(name, gradient_from)")
+                .eq("user_id", user.id)
+                .order("created_at", { ascending: false });
+
+            if (postsErr) {
+                setPostsError(postsErr.message);
+                setAuthoredPosts([]);
+                setPostsLoading(false);
+                return;
+            }
+
+            const mappedPosts: ProfilePost[] = (postsData ?? []).map((post: any) => {
+                const hub = Array.isArray(post.hubs) ? post.hubs[0] ?? null : post.hubs ?? null;
+                return {
+                    id: post.id,
+                    body: post.body ?? "",
+                    created_at: post.created_at,
+                    hub_name: hub?.name ?? "Unknown",
+                    hub_color: hub?.gradient_from ?? "#8b5cf6",
+                };
+            });
+
+            setAuthoredPosts(mappedPosts);
+            setPostsLoading(false);
         }
         load();
     }, []);
@@ -457,7 +494,7 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
 
                         {/* Stats */}
                         <div className="hidden sm:flex items-center gap-5 shrink-0">
-                            {[{ label: "Hubs", value: "15" }, { label: "Posts", value: "284" }, { label: "Friends", value: "142" }].map(stat => (
+                            {[{ label: "Hubs", value: "15" }, { label: "Posts", value: String(authoredPosts.length) }, { label: "Friends", value: "142" }].map(stat => (
                                 <div key={stat.label} className="text-center">
                                     <p className="text-base font-bold">{stat.value}</p>
                                     <p className="text-xs" style={{ color: "var(--text-muted)" }}>{stat.label}</p>
@@ -468,7 +505,7 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
 
                     {/* Mobile stats */}
                     <div className="flex sm:hidden items-center justify-around w-full mt-3 px-2">
-                        {[{ label: "Hubs", value: "15" }, { label: "Posts", value: "284" }, { label: "Friends", value: "142" }].map(stat => (
+                        {[{ label: "Hubs", value: "15" }, { label: "Posts", value: String(authoredPosts.length) }, { label: "Friends", value: "142" }].map(stat => (
                             <div key={stat.label} className="text-center">
                                 <p className="text-base font-bold">{stat.value}</p>
                                 <p className="text-xs" style={{ color: "var(--text-muted)" }}>{stat.label}</p>
@@ -536,55 +573,39 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
                 {/* Tab content */}
                 {activeTab === "posts" && (
                     <div className="space-y-3">
-                        {POSTS.map((post, i) => (
-                            <div
-                                key={i}
-                                role="button"
-                                tabIndex={0}
-                                onClick={() => {
-                                    void logContentEvent({
-                                        userId: analyticsUserId,
-                                        sessionId,
-                                        eventType: "click",
-                                        uiLocation: "profile",
-                                        metadata: { action: "profile_post_row_tap", tag: post.tag, index: i },
-                                    });
+                        {postsLoading ? (
+                            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                                Loading posts...
+                            </p>
+                        ) : postsError ? (
+                            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                                Could not load posts: {postsError}
+                            </p>
+                        ) : authoredPosts.length === 0 ? (
+                            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                                No posts yet.
+                            </p>
+                        ) : authoredPosts.map((post, i) => (
+                            <PostCard
+                                key={post.id}
+                                heightClass="h-48"
+                                post={{
+                                    id: post.id,
+                                    user: profile.display_name || "You",
+                                    handle: profile.handle ? `@${profile.handle.replace(/^@/, "")}` : "@you",
+                                    avatar: "🎮",
+                                    avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
+                                    hub: post.hub_name,
+                                    hubId: null,
+                                    userTags: [],
+                                    hubColor: post.hub_color,
+                                    time: formatTimeAgo(post.created_at),
+                                    text: post.body,
+                                    image: null,
+                                    comments: 0,
+                                    reposts: 0,
                                 }}
-                                onKeyDown={e => {
-                                    if (e.key === "Enter" || e.key === " ") {
-                                        e.preventDefault();
-                                        void logContentEvent({
-                                            userId: analyticsUserId,
-                                            sessionId,
-                                            eventType: "click",
-                                            uiLocation: "profile",
-                                            metadata: { action: "profile_post_row_tap", tag: post.tag, index: i },
-                                        });
-                                    }
-                                }}
-                                className="rounded-2xl p-4 flex gap-4 cursor-pointer transition-opacity hover:opacity-90"
-                                style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
-                            >
-                                <div
-                                    className="w-10 h-10 rounded-xl shrink-0 flex items-center justify-center text-lg"
-                                    style={{ background: "linear-gradient(135deg, #1e1b4b, #4c1d95)" }}
-                                >
-                                    🎮
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center justify-between gap-2 mb-1">
-                                        <span
-                                            className="text-xs px-2 py-0.5 rounded-full font-medium"
-                                            style={{ background: `${post.tagColor}20`, color: post.tagColor, border: `1px solid ${post.tagColor}40` }}
-                                        >
-                                            {post.tag}
-                                        </span>
-                                        <span className="text-xs" style={{ color: "var(--text-muted)" }}>{post.time}</span>
-                                    </div>
-                                    <p className="text-sm mb-2" style={{ color: "var(--text-dim)" }}>{post.text}</p>
-                                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>❤️ {post.likes}</span>
-                                </div>
-                            </div>
+                            />
                         ))}
                     </div>
                 )}
