@@ -2,6 +2,9 @@
 import React, { useState, useEffect } from "react";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
+import { joinHub, leaveHub, fetchUserHubSlugs } from "../lib/hubDb";
+
+
 
 const HUB_POSTS: Record<string, Array<{
     id: number; user: string; handle: string; avatar: string;
@@ -170,7 +173,16 @@ export default function HubsProfile({ hubName, joined, onToggleJoin, onBack }: H
     const info = HUB_INFO[hubName];
     const posts = HUB_POSTS[hubName] ?? [];
     const [memberCount, setMemberCount] = useState(info.members);
-    const [isJoined, setIsJoined] = useState(joined);
+    const [isJoined, setIsJoined] = useState(false);
+    const hubSlug = hubName.toLowerCase().replace(/\s+/g, "-");
+
+    useEffect(() => {
+        if (!userId) return;
+
+        fetchUserHubSlugs(userId).then((slugs) => {
+            setIsJoined(slugs.includes(hubSlug));
+        });
+    }, [userId, hubSlug]);
     const screenDwellRef = useContentImpression({
         userId,
         sessionId,
@@ -189,18 +201,22 @@ export default function HubsProfile({ hubName, joined, onToggleJoin, onBack }: H
         });
     }, [userId, sessionId, hubName]);
 
-    const handleToggle = () => {
-        const joining = !isJoined;
-        setIsJoined(joining);
-        setMemberCount(prev => joining ? prev + 1 : prev - 1);
-        void logContentEvent({
-            userId,
-            sessionId,
-            eventType: joining ? "join" : "leave",
-            uiLocation: "hub_profile",
-            metadata: { action: joining ? "join_hub" : "leave_hub", hub: hubName, source: "hub_profile_header" },
-        });
-        onToggleJoin();
+
+    //handle join/leave
+    const handleToggleJoin = async () => {
+        if (isJoined) {
+            const { error } = await leaveHub(userId, hubSlug);
+            if (error) {
+                console.error("Error leaving hub:", error);
+            }
+            setIsJoined(false);
+        } else {
+            const { error } = await joinHub(userId, hubSlug);
+            if (error) {
+                console.error("Error joining hub:", error);
+            }
+            setIsJoined(true);
+        }
     };
 
     const formatCount = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
@@ -245,7 +261,7 @@ export default function HubsProfile({ hubName, joined, onToggleJoin, onBack }: H
 
                     {/* Join / Leave button */}
                     <button
-                        onClick={handleToggle}
+                        onClick={handleToggleJoin}
                         className="px-5 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 active:scale-95"
                         style={isJoined
                             ? { background: "var(--surface2)", border: `1px solid ${info.color}60`, color: info.color }

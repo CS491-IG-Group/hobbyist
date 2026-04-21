@@ -796,76 +796,12 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
             <aside className="hidden lg:block w-80 shrink-0 p-5" style={{ borderLeft: "1px solid var(--border)" }}>
 
                 {/* Trending Hubs */}
+                {/* TODO: Add trending hubs */}
                 <div className="mb-6">
                     <div className="flex items-center justify-between mb-3">
                         <h2 className="text-sm font-bold" style={{ fontFamily: "Syne, sans-serif" }}>🔥 Trending Hubs</h2>
                         <span className="text-[10px] font-medium px-2 py-0.5 rounded-full"
                             style={{ background: "rgba(139,92,246,0.12)", color: "#a78bfa" }}>Explore all</span>
-                    </div>
-                    <div className="space-y-2">
-                        {[
-                            { name: "Cars", members: "18.2k", color: "#3b82f6", emoji: "🚗", trend: "+12%", bg: "linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%)" },
-                            { name: "Fitness", members: "24.5k", color: "#10b981", emoji: "💪", trend: "+8%", bg: "linear-gradient(135deg, #064e3b 0%, #059669 100%)" },
-                            { name: "Technology", members: "31.1k", color: "#f59e0b", emoji: "💻", trend: "+21%", bg: "linear-gradient(135deg, #78350f 0%, #d97706 100%)" },
-                        ].map(hub => {
-                            const isJoined = joinedHubs.includes(hub.name);
-                            return (
-                                <div key={hub.name}
-                                    className="rounded-xl p-3 transition-all hover:scale-[1.02] h-14 flex items-center cursor-pointer"
-                                    style={{ background: hub.bg, border: "1px solid rgba(255,255,255,0.1)", boxShadow: `0 4px 16px ${hub.color}20` }}
-                                    onClick={() => {
-                                        const hobby_slug = hubNameToHobbySlug(hub.name);
-                                        void logContentEvent({
-                                            userId,
-                                            sessionId,
-                                            eventType: "click",
-                                            uiLocation: "timeline",
-                                            metadata: {
-                                                action: "open_hub_from_trending",
-                                                hub: hub.name,
-                                                ...(hobby_slug ? { hobby_slug } : {}),
-                                            },
-                                        });
-                                        setActiveHub(hub.name);
-                                    }}>
-                                    <div className="flex items-center gap-3 w-full">
-                                        <span className="text-2xl">{hub.emoji}</span>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-bold text-white">{hub.name}</p>
-                                            <p className="text-[11px] text-white/50">{hub.members} members</p>
-                                        </div>
-                                        <div className="flex items-center gap-2 shrink-0">
-                                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
-                                                style={{ background: "rgba(255,255,255,0.15)", color: "#4ade80" }}>↑ {hub.trend}</span>
-                                            <button
-                                                onClick={e => {
-                                                    e.stopPropagation();
-                                                    const hobby_slug = hubNameToHobbySlug(hub.name);
-                                                    void logContentEvent({
-                                                        userId,
-                                                        sessionId,
-                                                        eventType: isJoined ? "leave" : "join",
-                                                        uiLocation: "timeline",
-                                                        metadata: {
-                                                            action: isJoined ? "leave_hub" : "join_hub",
-                                                            hub: hub.name,
-                                                            source: "timeline_trending_card",
-                                                            ...(hobby_slug ? { hobby_slug } : {}),
-                                                        },
-                                                    });
-                                                    onToggleJoin(hub.name);
-                                                }}
-                                                className="text-[10px] px-2 py-1 rounded-lg font-semibold transition-all hover:opacity-80"
-                                                style={isJoined
-                                                    ? { background: "rgba(255,255,255,0.2)", color: "#fff", border: "1px solid rgba(255,255,255,0.3)" }
-                                                    : { background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)", border: "1px solid rgba(255,255,255,0.15)" }}>
-                                                {isJoined ? "Joined ✓" : "Join +"}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })}
                     </div>
                 </div>
 

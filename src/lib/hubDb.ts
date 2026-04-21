@@ -108,3 +108,68 @@ export async function fetchAllHubs(): Promise<HubRow[]> {
     return { ...rest, hobby_slug } as HubRow;
   });
 }
+
+// allow user to join a hub
+export async function joinHub(userId: string, hubSlug: string): Promise<{ error: string | null }> {
+  // Resolve slug → id since your app works in slugs
+  const hub = await fetchHubBySlug(hubSlug);
+  if (!hub) return { error: "Hub not found" };
+
+  const { error } = await supabase
+    .from("user_hubs")
+    .insert({ user_id: userId, hub_id: hub.id, role: "member" });
+
+  if (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("[hubDb] joinHub", error.message);
+    }
+    // Unique constraint violation = already a member
+    if (error.code === "23505") return { error: "Already a member" };
+    return { error: error.message };
+  }
+
+  return { error: null };
+}
+
+// allow user to leave a hub
+export async function leaveHub(userId: string, hubSlug: string): Promise<{ error: string | null }> {
+  const hub = await fetchHubBySlug(hubSlug);
+  if (!hub) return { error: "Hub not found" };
+
+  const { error } = await supabase
+    .from("user_hubs")
+    .delete()
+    .match({ user_id: userId, hub_id: hub.id });
+
+  if (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("[hubDb] leaveHub", error.message);
+    }
+    return { error: error.message };
+  }
+
+  return { error: null };
+}
+
+
+// fetch user's hubs
+export async function fetchUserHubSlugs(userId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("user_hubs")
+    .select("hub_id, hubs(slug)")
+    .eq("user_id", userId);
+
+  if (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("[hubDb] fetchUserHubSlugs", error.message);
+    }
+    return [];
+  }
+
+  return (data ?? [])
+    .map((row: Record<string, unknown>) => {
+      const h = row.hubs as { slug?: string } | null;
+      return h?.slug ?? null;
+    })
+    .filter(Boolean) as string[];
+}
