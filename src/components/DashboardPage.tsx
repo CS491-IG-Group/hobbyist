@@ -13,6 +13,8 @@ import NotificationsPage from "./NotificationsPage";
 import { supabase } from "../lib/supabase";
 import { withTimeout } from "../lib/withTimeout";
 import { AnalyticsProvider, logContentEvent } from "../lib/AnalyticsContext";
+import { joinHub, leaveHub, fetchUserHubSlugs, HubRow } from "../lib/hubDb";
+
 
 type SubPage =
   | null
@@ -253,11 +255,38 @@ export default function DashboardPage({ onLogout }: Props) {
   }, []);
 
   // Joined hubs — shared with TimelinePage
-  const [joinedHubs, setJoinedHubs] = useState([
-    "Cars", "Fitness", "Technology", "Movies", "Photography", "Cooking", "Gaming"
-  ]);
-  const toggleJoinHub = (hubName: string) =>
-    setJoinedHubs(prev => prev.includes(hubName) ? prev.filter(h => h !== hubName) : [...prev, hubName]);
+  const [joinedHubs, setJoinedHubs] = useState([]);
+
+  useEffect(() => {
+    if (!userId) return;
+    const loadJoinedHubs = async () => {
+      try {
+        const hubs = await fetchUserHubSlugs(userId);
+        setJoinedHubs(hubs);
+      } catch (error) {
+        console.error("Error loading joined hubs:", error);
+      }
+    };
+    loadJoinedHubs();
+  }, [userId]);
+
+
+  const toggleJoinHub = async (hubSlug: string) => {
+    if (!userId) return;
+    const isJoined = joinedHubs.includes(hubSlug);
+    try {
+      if (isJoined) {
+        await leaveHub(userId, hubSlug);
+      } else {
+        await joinHub(userId, hubSlug);
+      }
+      // Refresh the list
+      const updatedHubs = await fetchUserHubSlugs(userId);
+      setJoinedHubs(updatedHubs);
+    } catch (error) {
+      console.error("Error toggling hub join:", error);
+    }
+  };
 
   // Goals (Supabase: `goals` + `user_goals`)
   const [goals, setGoals] = useState<GoalRow[]>([]);
@@ -443,195 +472,186 @@ export default function DashboardPage({ onLogout }: Props) {
   };
   const deleteList = (id: number) => setLists(prev => prev.filter(l => l.id !== id));
 
-  const hubs = [
-    { id: 1, name: "Cars", emoji: "🚗", color: "#3b82f6" },
-    { id: 2, name: "Fitness", emoji: "💪", color: "#10b981" },
-    { id: 3, name: "Technology", emoji: "💻", color: "#f59e0b" },
-    { id: 4, name: "Movies", emoji: "🎬", color: "#ec4899" },
-    { id: 5, name: "Photography", emoji: "📸", color: "#6366f1" },
-    { id: 6, name: "Cooking", emoji: "🍳", color: "#ef4444" },
-    { id: 7, name: "Gaming", emoji: "🎮", color: "#8b5cf6" },
-  ];
+
 
   return (
     <AnalyticsProvider userId={userId} sessionId={sessionId}>
-    <div className="flex min-h-screen" style={{ background: "var(--bg)" }}>
-      <Sidebar
-        activeNav={activeNav}
-        setActiveNav={handleNav}
-        onLogout={onLogout}
-        unreadCount={unreadCount}
-        onSelectHub={(categoryId, hubId) => {
-          setActiveNav("discover");
-          setSubPage({ type: "hub", categoryId, hubId });
-        }}
-      />
+      <div className="flex min-h-screen" style={{ background: "var(--bg)" }}>
+        <Sidebar
+          activeNav={activeNav}
+          setActiveNav={handleNav}
+          onLogout={onLogout}
+          unreadCount={unreadCount}
+          onSelectHub={(categoryId, hubId) => {
+            setActiveNav("discover");
+            setSubPage({ type: "hub", categoryId, hubId });
+          }}
+        />
 
-      <main className="flex-1 overflow-y-auto">
-        {activeNav === "timeline" ? (
-          <TimelinePage
-            joinedHubs={joinedHubs}
-            onToggleJoin={toggleJoinHub}
-          />
-        ) : activeNav === "discover" ? (
-          subPage?.type === "item" ? (
-            <ItemDetailPage
-              categoryId={subPage.categoryId}
-              hubId={subPage.hubId}
-              itemIndex={subPage.itemIndex}
-              onBack={() => setSubPage({ type: "hub", categoryId: subPage.categoryId, hubId: subPage.hubId })}
+        <main className="flex-1 overflow-y-auto">
+          {activeNav === "timeline" ? (
+            <TimelinePage
+              joinedHubs={joinedHubs}
+              onToggleJoin={toggleJoinHub}
             />
-          ) : subPage?.type === "hub" ? (
-            <HubPage
-              categoryId={subPage.categoryId}
-              hubId={subPage.hubId}
-              onBack={() => setSubPage({ type: "category", categoryId: subPage.categoryId })}
-              onSelectItem={(itemIndex) =>
-                setSubPage({ type: "item", categoryId: subPage.categoryId, hubId: subPage.hubId, itemIndex })
-              }
-            />
-          ) : subPage?.type === "category" ? (
-            <CategoryPage
-              categoryId={subPage.categoryId}
-              onBack={() => setSubPage(null)}
-              onSelectHub={(hubId) =>
-                setSubPage({ type: "hub", categoryId: subPage.categoryId, hubId })
-              }
-            />
-          ) : (
-            <DiscoverPage
-              onSelectCategory={(categoryId) => setSubPage({ type: "category", categoryId })}
-            />
-          )
-        ) : activeNav === "orbit" ? (
-          <NicheFeed />
-        ) : activeNav === "profile" ? (
-          showAccountSettings ? (
-            <AccountSettingsPage
-              onBack={() => setShowAccountSettings(false)}
-              displayName=""
-              handle=""
-              email=""
-            />
-          ) : (
-            <ProfilePage onOpenSettings={() => setShowAccountSettings(true)} />
-          )
-        ) : activeNav === "notifications" ? (
-          <NotificationsPage />
-        ) : null}
-      </main>
+          ) : activeNav === "discover" ? (
+            subPage?.type === "item" ? (
+              <ItemDetailPage
+                categoryId={subPage.categoryId}
+                hubId={subPage.hubId}
+                itemIndex={subPage.itemIndex}
+                onBack={() => setSubPage({ type: "hub", categoryId: subPage.categoryId, hubId: subPage.hubId })}
+              />
+            ) : subPage?.type === "hub" ? (
+              <HubPage
+                categoryId={subPage.categoryId}
+                hubId={subPage.hubId}
+                onBack={() => setSubPage({ type: "category", categoryId: subPage.categoryId })}
+                onSelectItem={(itemIndex) =>
+                  setSubPage({ type: "item", categoryId: subPage.categoryId, hubId: subPage.hubId, itemIndex })
+                }
+              />
+            ) : subPage?.type === "category" ? (
+              <CategoryPage
+                categoryId={subPage.categoryId}
+                onBack={() => setSubPage(null)}
+                onSelectHub={(hubId) =>
+                  setSubPage({ type: "hub", categoryId: subPage.categoryId, hubId })
+                }
+              />
+            ) : (
+              <DiscoverPage
+                onSelectCategory={(categoryId) => setSubPage({ type: "category", categoryId })}
+              />
+            )
+          ) : activeNav === "orbit" ? (
+            <NicheFeed />
+          ) : activeNav === "profile" ? (
+            showAccountSettings ? (
+              <AccountSettingsPage
+                onBack={() => setShowAccountSettings(false)}
+                displayName=""
+                handle=""
+                email=""
+              />
+            ) : (
+              <ProfilePage onOpenSettings={() => setShowAccountSettings(true)} />
+            )
+          ) : activeNav === "notifications" ? (
+            <NotificationsPage />
+          ) : null}
+        </main>
 
-      {activeNav === "profile" && <aside className="hidden lg:flex flex-col w-72 shrink-0 sticky top-0 h-screen overflow-y-auto p-4 gap-5"
-        style={{ borderLeft: "1px solid var(--border)" }}>
+        {activeNav === "profile" && <aside className="hidden lg:flex flex-col w-72 shrink-0 sticky top-0 h-screen overflow-y-auto p-4 gap-5"
+          style={{ borderLeft: "1px solid var(--border)" }}>
 
-        {/* ── Goals ── */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-bold" style={{ fontFamily: "Syne, sans-serif" }}>Goals</h3>
-            {!showNewGoal && (
-              <button onClick={() => setShowNewGoal(true)}
-                className="w-7 h-7 rounded-full flex items-center justify-center text-white text-base hover:opacity-80 transition-all"
-                style={{ background: "var(--gradient-btn)" }}>+</button>
+          {/* ── Goals ── */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold" style={{ fontFamily: "Syne, sans-serif" }}>Goals</h3>
+              {!showNewGoal && (
+                <button onClick={() => setShowNewGoal(true)}
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-white text-base hover:opacity-80 transition-all"
+                  style={{ background: "var(--gradient-btn)" }}>+</button>
+              )}
+            </div>
+            {goalsError && (
+              <p className="text-[10px] mb-2 leading-snug" style={{ color: "#f87171" }}>{goalsError}</p>
             )}
+            <div className="space-y-2">
+              {showNewGoal && <NewGoalForm onAdd={addGoal} onCancel={() => setShowNewGoal(false)} />}
+              {goalsLoading && !showNewGoal && (
+                <p className="text-xs text-center py-3" style={{ color: "var(--text-muted)" }}>Loading goals…</p>
+              )}
+              {!goalsLoading && goals.map((g) => (
+                <GoalCard key={g.userGoalId} label={g.label} current={g.current} total={g.total}
+                  onIncrement={() => void incrementGoal(g)}
+                  onDecrement={() => void decrementGoal(g)}
+                  onDelete={() => void deleteGoal(g)}
+                  onRename={(newLabel) => void renameGoal(g, newLabel)} />
+              ))}
+              {!goalsLoading && goals.length === 0 && !showNewGoal && (
+                <p className="text-xs text-center py-4" style={{ color: "var(--text-muted)" }}>
+                  No goals yet. Hit + to add one!
+                </p>
+              )}
+            </div>
           </div>
-          {goalsError && (
-            <p className="text-[10px] mb-2 leading-snug" style={{ color: "#f87171" }}>{goalsError}</p>
-          )}
-          <div className="space-y-2">
-            {showNewGoal && <NewGoalForm onAdd={addGoal} onCancel={() => setShowNewGoal(false)} />}
-            {goalsLoading && !showNewGoal && (
-              <p className="text-xs text-center py-3" style={{ color: "var(--text-muted)" }}>Loading goals…</p>
-            )}
-            {!goalsLoading && goals.map((g) => (
-              <GoalCard key={g.userGoalId} label={g.label} current={g.current} total={g.total}
-                onIncrement={() => void incrementGoal(g)}
-                onDecrement={() => void decrementGoal(g)}
-                onDelete={() => void deleteGoal(g)}
-                onRename={(newLabel) => void renameGoal(g, newLabel)} />
-            ))}
-            {!goalsLoading && goals.length === 0 && !showNewGoal && (
-              <p className="text-xs text-center py-4" style={{ color: "var(--text-muted)" }}>
-                No goals yet. Hit + to add one!
-              </p>
-            )}
-          </div>
-        </div>
 
-        <div className="h-px" style={{ background: "var(--border)" }} />
+          <div className="h-px" style={{ background: "var(--border)" }} />
 
-        {/* ── Lists ── */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-bold" style={{ fontFamily: "Syne, sans-serif" }}>Lists</h3>
-            {!showNewList && (
-              <button onClick={() => setShowNewList(true)}
-                className="w-7 h-7 rounded-full flex items-center justify-center text-white text-base hover:opacity-80 transition-all"
-                style={{ background: "var(--gradient-btn)" }}>+</button>
-            )}
-          </div>
-          <div className="space-y-2">
-            {showNewList && <NewListForm onAdd={addList} onCancel={() => setShowNewList(false)} />}
-            {lists.map(list => (
-              <div key={list.id}
-                className="flex items-center justify-between w-full px-3 py-2.5 rounded-xl"
-                style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}>
-                {editingListId === list.id ? (
-                  <input ref={listInputRef} value={listDraft}
-                    onChange={e => setListDraft(e.target.value)}
-                    onBlur={() => commitListRename(list.id)}
-                    onKeyDown={e => {
-                      if (e.key === "Enter") commitListRename(list.id);
-                      if (e.key === "Escape") setEditingListId(null);
-                    }}
-                    className="flex-1 text-xs font-medium bg-transparent outline-none border-b mr-2"
-                    style={{ color: "var(--text)", borderColor: "#a78bfa" }} />
-                ) : (
-                  <span className="flex-1 text-sm font-medium cursor-pointer hover:opacity-70 truncate"
-                    onClick={() => { setEditingListId(list.id); setListDraft(list.label); }}
-                    title="Click to rename">
-                    {list.label}
-                  </span>
-                )}
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-xs px-2 py-0.5 rounded-full"
-                    style={{ background: "rgba(139,92,246,0.15)", color: "#a78bfa" }}>
-                    {list.count}
-                  </span>
-                  <button onClick={() => deleteList(list.id)} className="hover:opacity-80" style={{ color: "var(--text-muted)" }}>
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
+          {/* ── Lists ── */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold" style={{ fontFamily: "Syne, sans-serif" }}>Lists</h3>
+              {!showNewList && (
+                <button onClick={() => setShowNewList(true)}
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-white text-base hover:opacity-80 transition-all"
+                  style={{ background: "var(--gradient-btn)" }}>+</button>
+              )}
+            </div>
+            <div className="space-y-2">
+              {showNewList && <NewListForm onAdd={addList} onCancel={() => setShowNewList(false)} />}
+              {lists.map(list => (
+                <div key={list.id}
+                  className="flex items-center justify-between w-full px-3 py-2.5 rounded-xl"
+                  style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}>
+                  {editingListId === list.id ? (
+                    <input ref={listInputRef} value={listDraft}
+                      onChange={e => setListDraft(e.target.value)}
+                      onBlur={() => commitListRename(list.id)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") commitListRename(list.id);
+                        if (e.key === "Escape") setEditingListId(null);
+                      }}
+                      className="flex-1 text-xs font-medium bg-transparent outline-none border-b mr-2"
+                      style={{ color: "var(--text)", borderColor: "#a78bfa" }} />
+                  ) : (
+                    <span className="flex-1 text-sm font-medium cursor-pointer hover:opacity-70 truncate"
+                      onClick={() => { setEditingListId(list.id); setListDraft(list.label); }}
+                      title="Click to rename">
+                      {list.label}
+                    </span>
+                  )}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs px-2 py-0.5 rounded-full"
+                      style={{ background: "rgba(139,92,246,0.15)", color: "#a78bfa" }}>
+                      {list.count}
+                    </span>
+                    <button onClick={() => deleteList(list.id)} className="hover:opacity-80" style={{ color: "var(--text-muted)" }}>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div className="h-px" style={{ background: "var(--border)" }} />
+          <div className="h-px" style={{ background: "var(--border)" }} />
 
-        {/* ── My Hubs ── */}
-        <div>
-          <h3 className="text-sm font-bold mb-3" style={{ fontFamily: "Syne, sans-serif" }}>My Hubs</h3>
-          <div className="flex flex-wrap gap-2">
-            {hubs.filter(h => joinedHubs.includes(h.name)).map(hub => (
-              <div key={hub.id}
-                onClick={() => toggleJoinHub(hub.name)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer hover:opacity-70 transition-all"
-                style={{ background: `${hub.color}15`, color: hub.color, border: `1px solid ${hub.color}30` }}
-                title="Click to leave hub">
-                <span>{hub.emoji}</span>
-                <span>{hub.name}</span>
-              </div>
-            ))}
-            {joinedHubs.length === 0 && (
-              <p className="text-xs" style={{ color: "var(--text-muted)" }}>No hubs joined yet.</p>
-            )}
+          {/* ── My Hubs ── */}
+          <div>
+            <h3 className="text-sm font-bold mb-3" style={{ fontFamily: "Syne, sans-serif" }}>My Hubs</h3>
+            <div className="flex flex-wrap gap-2">
+              {joinedHubs.map(hub => (
+                <div key={hub}
+                  style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium cursor-pointer hover:opacity-70 transition-all"
+                // TODO: Add onClick to go to Hub Page
+                >
+                  <span>{hub}</span>
+                </div>
+              ))}
+              {joinedHubs.length === 0 && (
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>No hubs joined yet.</p>
+              )}
+            </div>
           </div>
-        </div>
 
-      </aside>}
-    </div>
+        </aside>}
+      </div>
     </AnalyticsProvider>
   );
 }

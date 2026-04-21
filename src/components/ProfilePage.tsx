@@ -4,14 +4,6 @@ import { supabase } from "@/lib/supabase";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
 
-const HUBS = [
-    { name: "Cars", color: "#3b82f6", emoji: "🚗" },
-    { name: "Fitness", color: "#10b981", emoji: "💪" },
-    { name: "Technology", color: "#f59e0b", emoji: "💻" },
-    { name: "Movies", color: "#ec4899", emoji: "🎬" },
-    { name: "Photography", color: "#6366f1", emoji: "📸" },
-    { name: "Cooking", color: "#ef4444", emoji: "🍳" },
-];
 
 const BADGES = [
     { icon: "🏆", label: "Top Poster", desc: "100+ posts" },
@@ -361,6 +353,7 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
     const [showEditModal, setShowEditModal] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
     const [profile, setProfile] = useState<ProfileData>({ display_name: "", handle: "", email: "", bio: "" });
+    const [userHubs, setUserHubs] = useState<string[]>([]);
     const profileDwellRef = useContentImpression({
         userId: analyticsUserId,
         sessionId,
@@ -368,6 +361,7 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
         metadata: { kind: "profile_screen_dwell" },
     });
 
+    // log profile screen dwell
     useEffect(() => {
         void logContentEvent({
             userId: analyticsUserId,
@@ -402,6 +396,26 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
         }
         load();
     }, []);
+
+    //fetch user hubs
+    useEffect(() => {
+        async function loadUserHubs() {
+            if (!userId) return;
+            const { data, error } = await supabase
+                .from("user_hubs")
+                .select("hub_id, hubs(slug)")
+                .eq("user_id", userId);
+            if (error) {
+                if (process.env.NODE_ENV === "development") {
+                    console.warn("[hubDb] fetchUserHubs", error.message);
+                }
+                return;
+            }
+            const hubs = data.map((row: any) => row.hubs?.slug).filter(Boolean);
+            setUserHubs(hubs);
+        }
+        loadUserHubs();
+    }, [userId]);
 
     function onProfileSaved(updated: ProfileData) {
         setProfile(updated);
@@ -591,9 +605,9 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
 
                 {activeTab === "hubs" && (
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        {HUBS.map(hub => (
+                        {userHubs.map(hub => (
                             <div
-                                key={hub.name}
+                                key={hub}
                                 role="button"
                                 tabIndex={0}
                                 onClick={() => {
@@ -602,7 +616,7 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
                                         sessionId,
                                         eventType: "click",
                                         uiLocation: "profile",
-                                        metadata: { action: "profile_hub_tile_tap", hub: hub.name },
+                                        metadata: { action: "profile_hub_tile_tap", hub: hub },
                                     });
                                 }}
                                 onKeyDown={e => {
@@ -613,20 +627,14 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
                                             sessionId,
                                             eventType: "click",
                                             uiLocation: "profile",
-                                            metadata: { action: "profile_hub_tile_tap", hub: hub.name },
+                                            metadata: { action: "profile_hub_tile_tap", hub: hub },
                                         });
                                     }
                                 }}
                                 className="rounded-2xl p-4 flex items-center gap-3 transition-all hover:opacity-80 cursor-pointer"
                                 style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
                             >
-                                <div
-                                    className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
-                                    style={{ background: `${hub.color}20`, border: `1px solid ${hub.color}40` }}
-                                >
-                                    {hub.emoji}
-                                </div>
-                                <span className="text-sm font-semibold truncate">{hub.name}</span>
+                                <span className="text-sm font-semibold truncate"> HUB: {hub} </span>
                             </div>
                         ))}
                     </div>

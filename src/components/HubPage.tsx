@@ -4,6 +4,7 @@ import { getHubById, getCategoryById, type HubDetail, type HubItem } from "./hub
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
 import { fetchHubBySlug, hubRowToDetail } from "../lib/hubDb";
+import { joinHub, leaveHub, fetchUserHubSlugs } from "../lib/hubDb";
 
 /* ------------------------------------------------------------------ */
 /*  Icons                                                              */
@@ -84,7 +85,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
     const [activeTab, setActiveTab] = useState<"recent" | "popular">("recent");
     const [dbHub, setDbHub] = useState<HubDetail | null>(null);
     const [hubLoading, setHubLoading] = useState(true);
-
+    const [isJoined, setIsJoined] = useState(false);
     const mockHub = getHubById(categoryId, hubId);
     const category = getCategoryById(categoryId);
 
@@ -108,6 +109,25 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
             cancelled = true;
         };
     }, [categoryId, hubId]);
+
+    useEffect(() => {
+        if (!userId) return;
+
+        fetchUserHubSlugs(userId).then((slugs) => {
+            setIsJoined(slugs.includes(hubId));
+        });
+    }, [userId, hubId]);
+
+    const handleToggleJoin = async () => {
+        if (isJoined) {
+            const { error } = await leaveHub(userId, hubId);
+            if (error) throw new Error(error);
+        } else {
+            const { error } = await joinHub(userId, hubId);
+            if (error) throw new Error(error);
+        }
+    };
+
 
     const hub = dbHub ?? mockHub;
     const categoryName = category?.name ?? categoryId;
@@ -226,18 +246,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                     </span>
                     <button
                         type="button"
-                        onClick={() => void logContentEvent({
-                            userId,
-                            sessionId,
-                            eventType: "join",
-                            uiLocation: "hub",
-                            metadata: {
-                                action: "hub_join_intent",
-                                category_id: categoryId,
-                                hub_id: hubId,
-                                hub_name: hub.name,
-                            },
-                        })}
+                        onClick={handleToggleJoin}
                         className="px-5 py-1.5 rounded-full text-sm font-semibold transition-all hover:scale-105"
                         style={{
                             background: "rgba(255,255,255,0.2)",
@@ -246,7 +255,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                             border: "1px solid rgba(255,255,255,0.35)",
                         }}
                     >
-                        join
+                        {isJoined ? "✓ Joined" : "Join"}
                     </button>
                 </div>
             </div>
