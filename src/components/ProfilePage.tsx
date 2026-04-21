@@ -605,6 +605,7 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
 
                 {activeTab === "hubs" && (
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {/* Todo: Update UI for hubs, add Hub name and icon(?) */}
                         {userHubs.map(hub => (
                             <div
                                 key={hub}
