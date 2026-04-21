@@ -1,18 +1,25 @@
 "use client";
 import React, { useCallback, useEffect, useState, useRef } from "react";
+import dynamic from "next/dynamic";
 import Sidebar from "./Sidebar";
-import DiscoverPage from "./DiscoverPage";
-import CategoryPage from "./CategoryPage";
-import HubPage from "./HubPage";
-import ItemDetailPage from "./ItemDetailPage";
-import TimelinePage from "./TimelinePage";
-import NicheFeed from "./NicheFeed";
-import ProfilePage from "./ProfilePage";
-import AccountSettingsPage from "./AccountSettingsPage";
-import NotificationsPage from "./NotificationsPage";
 import { supabase } from "../lib/supabase";
-import { withTimeout } from "../lib/withTimeout";
 import { AnalyticsProvider, logContentEvent } from "../lib/AnalyticsContext";
+
+const MainPaneLoading = () => (
+  <div className="p-6 text-sm" style={{ color: "var(--text-muted)" }}>
+    Loading...
+  </div>
+);
+
+const DiscoverPage = dynamic(() => import("./DiscoverPage"), { loading: () => <MainPaneLoading /> });
+const CategoryPage = dynamic(() => import("./CategoryPage"), { loading: () => <MainPaneLoading /> });
+const HubPage = dynamic(() => import("./HubPage"), { loading: () => <MainPaneLoading /> });
+const ItemDetailPage = dynamic(() => import("./ItemDetailPage"), { loading: () => <MainPaneLoading /> });
+const TimelinePage = dynamic(() => import("./TimelinePage"), { loading: () => <MainPaneLoading /> });
+const NicheFeed = dynamic(() => import("./NicheFeed"), { loading: () => <MainPaneLoading /> });
+const ProfilePage = dynamic(() => import("./ProfilePage"), { loading: () => <MainPaneLoading /> });
+const AccountSettingsPage = dynamic(() => import("./AccountSettingsPage"), { loading: () => <MainPaneLoading /> });
+const NotificationsPage = dynamic(() => import("./NotificationsPage"), { loading: () => <MainPaneLoading /> });
 
 type SubPage =
   | null
@@ -22,6 +29,7 @@ type SubPage =
 
 interface Props {
   onLogout: () => void;
+  authUserId: string | null;
 }
 
 /** One row in the profile sidebar: `user_goals` joined to `goals`. */
@@ -172,13 +180,12 @@ function NewListForm({ onAdd, onCancel }: {
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
-export default function DashboardPage({ onLogout }: Props) {
+export default function DashboardPage({ onLogout, authUserId }: Props) {
   const [activeNav, setActiveNav] = useState("timeline");
   const [subPage, setSubPage] = useState<SubPage>(null);
   const [unreadCount, setUnreadCount] = useState(3);
   const [showAccountSettings, setShowAccountSettings] = useState(false);
-  const [onboardingCompleted, setOnboardingCompleted] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
+  const userId = authUserId;
   const [sessionId] = useState<string>(() =>
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
@@ -197,60 +204,6 @@ export default function DashboardPage({ onLogout }: Props) {
     setSubPage(null);
     setShowAccountSettings(false);
   }
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const checkOnboardingAndUser = async () => {
-      try {
-        const { data: { session }, error: sessionErr } = await withTimeout(
-          supabase.auth.getSession(),
-          12_000,
-          "dashboard getSession"
-        );
-        if (cancelled) return;
-        if (sessionErr) throw sessionErr;
-        const user = session?.user ?? null;
-        if (!user) {
-          setUserId(null);
-          return;
-        }
-
-        setUserId(user.id);
-
-        try {
-          const res = await withTimeout(
-            supabase
-              .from("users")
-              .select("onboarding_completed")
-              .eq("id", user.id)
-              .maybeSingle(),
-            12_000,
-            "dashboard users profile"
-          );
-          if (cancelled) return;
-          setOnboardingCompleted(res.data?.onboarding_completed === true);
-        } catch (profileErr) {
-          if (process.env.NODE_ENV === "development") {
-            console.warn("[dashboard] users profile fetch failed (session kept)", profileErr);
-          }
-        }
-      } catch (e) {
-        if (process.env.NODE_ENV === "development") {
-          console.warn("[dashboard] auth init failed", e);
-        }
-        if (!cancelled) {
-          setUserId(null);
-        }
-      }
-    };
-
-    void checkOnboardingAndUser();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // Joined hubs — shared with TimelinePage
   const [joinedHubs, setJoinedHubs] = useState([

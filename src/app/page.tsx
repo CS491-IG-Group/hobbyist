@@ -14,9 +14,9 @@ interface OnboardingUser {
   email: string;
 }
 
-const SESSION_MS = 12_000;
-const PROFILE_MS = 12_000;
-const PROFILE_FETCH_ATTEMPTS = 3;
+const SESSION_MS = 5_000;
+const PROFILE_MS = 5_000;
+const PROFILE_FETCH_ATTEMPTS = 2;
 
 interface UsersProfileRow {
   onboarding_completed: boolean | null;
@@ -74,17 +74,20 @@ async function loadUsersProfile(userId: string): Promise<
 }
 
 export default function Home() {
-  const [view, setView] = useState<View>("loading");
+  const [view, setView] = useState<View>("login");
   const [onboardingUser, setOnboardingUser] = useState<OnboardingUser | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const applySession = useCallback(async (session: Session | null) => {
     if (!session) {
+      setCurrentUserId(null);
       setOnboardingUser(null);
       setView("login");
       return;
     }
 
     const user = session.user;
+    setCurrentUserId(user.id);
     const result = await loadUsersProfile(user.id);
 
     if (result.status === "failed") {
@@ -144,19 +147,6 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, [applySession]);
 
-  useEffect(() => {
-    const id = window.setTimeout(() => {
-      setView((v) => {
-        if (v !== "loading") return v;
-        if (process.env.NODE_ENV === "development") {
-          console.warn("[auth] loading exceeded 20s — showing login (check Supabase URL, network, users table)");
-        }
-        return "login";
-      });
-    }, 20_000);
-    return () => clearTimeout(id);
-  }, []);
-
   async function handleLogout() {
     await supabase.auth.signOut();
     setOnboardingUser(null);
@@ -184,7 +174,7 @@ export default function Home() {
       <>
         {/* Blurred dashboard shell so user sees they're almost in */}
         <div style={{ filter: "blur(2px)", pointerEvents: "none", userSelect: "none" }}>
-          <DashboardPage onLogout={handleLogout} />
+          <DashboardPage onLogout={handleLogout} authUserId={currentUserId} />
         </div>
         <OnboardingModal
           userId={onboardingUser.id}
@@ -199,5 +189,5 @@ export default function Home() {
   }
 
   // ── Dashboard ────────────────────────────────────────────────────────
-  return <DashboardPage onLogout={handleLogout} />;
+  return <DashboardPage onLogout={handleLogout} authUserId={currentUserId} />;
 }
