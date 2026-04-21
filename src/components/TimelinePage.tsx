@@ -107,7 +107,7 @@ function CommentIcon() {
 
 const HEIGHT_CLASSES = ["h-48", "h-56", "h-64", "h-72", "h-52", "h-60"];
 
-function PostCard({ post, heightClass }: { post: any; heightClass: string }) {
+export function PostCard({ post, heightClass }: { post: any; heightClass: string }) {
     const { userId, sessionId } = useAnalytics();
     const [isLiked, setIsLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(0);
