@@ -42,6 +42,12 @@ interface GoalRow {
   total: number;
 }
 
+interface UserListRow {
+  id: string;
+  label: string;
+  count: number;
+}
+
 // ─── Goal Card ────────────────────────────────────────────────────────────────
 function GoalCard({ label, current, total, onIncrement, onDecrement, onDelete, onRename }: {
   label: string; current: number; total: number;
@@ -376,26 +382,192 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
   };
 
   // Lists
-  const [lists, setLists] = useState([
-    { id: 1, label: "🎬 Movies to Watch", count: 8 },
-    { id: 2, label: "📚 Books to Read", count: 5 },
-    { id: 3, label: "🎮 Games to Play", count: 12 },
-  ]);
+  const [lists, setLists] = useState<UserListRow[]>([]);
+  const [listsLoading, setListsLoading] = useState(false);
+  const [listsError, setListsError] = useState<string | null>(null);
   const [showNewList, setShowNewList] = useState(false);
-  const [editingListId, setEditingListId] = useState<number | null>(null);
-  const [listDraft, setListDraft] = useState("");
-  const listInputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { if (editingListId !== null) listInputRef.current?.focus(); }, [editingListId]);
+  const [expandedListIds, setExpandedListIds] = useState<Record<string, boolean>>({});
+  const [listItemsByListId, setListItemsByListId] = useState<Record<string, Array<{
+    listItemId: string | null;
+    title: string;
+    itemId: number | null;
+    hubSlug: string | null;
+    hobbySlug: string | null;
+  }>>>({});
 
-  const addList = (label: string) => {
-    setLists(prev => [...prev, { id: Date.now(), label, count: 0 }]);
+  const loadLists = useCallback(async () => {
+    if (!userId) {
+      setLists([]);
+      setListsError(null);
+      return;
+    }
+
+    setListsLoading(true);
+    setListsError(null);
+
+    const { data: listsData, error: listsErr } = await supabase
+      .from("lists")
+      .select("id, title")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: true });
+
+    if (listsErr) {
+      setListsError(listsErr.message);
+      setLists([]);
+      setListsLoading(false);
+      return;
+    }
+
+    const rawLists = (listsData ?? []) as Array<{ id: string; title: string }>;
+    const withCounts: UserListRow[] = await Promise.all(
+      rawLists.map(async (list) => {
+        const { count } = await supabase
+          .from("list_items")
+          .select("*", { count: "exact", head: true })
+          .eq("list_id", list.id);
+        return {
+          id: list.id,
+          label: list.title,
+          count: count ?? 0,
+        };
+      })
+    );
+
+    setLists(withCounts);
+    setListsLoading(false);
+  }, [userId]);
+
+  useEffect(() => {
+    void loadLists();
+  }, [loadLists]);
+
+  const addList = async (label: string) => {
+    if (!userId) return;
+    const { error } = await supabase
+      .from("lists")
+      .insert({ user_id: userId, title: label.trim(), type: "generic" });
+    if (error) {
+      setListsError(error.message);
+      return;
+    }
+    setListsError(null);
     setShowNewList(false);
+    await loadLists();
   };
-  const commitListRename = (id: number) => {
-    if (listDraft.trim()) setLists(prev => prev.map(l => l.id === id ? { ...l, label: listDraft.trim() } : l));
-    setEditingListId(null);
+
+  const toggleListExpanded = async (listId: string) => {
+    setExpandedListIds(prev => ({ ...prev, [listId]: !prev[listId] }));
+    if (listItemsByListId[listId]) return;
+
+    const { data, error } = await supabase
+      .from("list_items")
+      .select("id, title, item_id")
+      .eq("list_id", listId)
+      .order("created_at", { ascending: true });
+    let rawItems: Array<{ id: string | null; title: string; item_id: number | null }> = [];
+
+    if (error) {
+      // Backward-compatible fallback for DBs that don't yet have list_items.item_id.
+      const { data: fallbackData, error: fallbackErr } = await supabase
+        .from("list_items")
+        .select("id, title")
+        .eq("list_id", listId)
+        .order("created_at", { ascending: true });
+      if (fallbackErr) {
+        setListsError(fallbackErr.message);
+        return;
+      }
+      rawItems = ((fallbackData ?? []) as Array<{ id: string; title: string }>).map((r) => ({
+        id: r.id,
+        title: r.title,
+        item_id: null,
+      }));
+    } else {
+      rawItems = (data ?? []) as Array<{ id: string; title: string; item_id: number | null }>;
+    }
+
+    const itemIds = rawItems
+      .map((r) => r.item_id)
+      .filter((v): v is number => typeof v === "number");
+
+    const contextByItemId = new Map<number, { hubSlug: string | null; hobbySlug: string | null }>();
+    if (itemIds.length > 0) {
+      const { data: itemContextRows, error: itemContextErr } = await supabase
+        .from("items")
+        .select("id, hubs!inner(slug, hobbies(slug))")
+        .in("id", itemIds);
+
+      if (itemContextErr) {
+        setListsError(itemContextErr.message);
+      } else {
+        for (const row of (itemContextRows ?? []) as Array<{
+          id: number;
+          hubs?: { slug?: string | null; hobbies?: { slug?: string | null } | null } | null;
+        }>) {
+          contextByItemId.set(row.id, {
+            hubSlug: row.hubs?.slug ?? null,
+            hobbySlug: row.hubs?.hobbies?.slug ?? null,
+          });
+        }
+      }
+    }
+
+    const entries = rawItems.map((r) => {
+      const ctx = r.item_id != null ? contextByItemId.get(r.item_id) : undefined;
+      return {
+        listItemId: r.id,
+        title: r.title,
+        itemId: r.item_id ?? null,
+        hubSlug: ctx?.hubSlug ?? null,
+        hobbySlug: ctx?.hobbySlug ?? null,
+      };
+    });
+    setListItemsByListId(prev => ({ ...prev, [listId]: entries }));
   };
-  const deleteList = (id: number) => setLists(prev => prev.filter(l => l.id !== id));
+
+  const removeListItem = async (listId: string, listItemId: string | null) => {
+    if (!listItemId) return;
+    const { error } = await supabase
+      .from("list_items")
+      .delete()
+      .eq("id", listItemId);
+    if (error) {
+      setListsError(error.message);
+      return;
+    }
+    setListsError(null);
+    setListItemsByListId(prev => {
+      const next = { ...prev };
+      next[listId] = (next[listId] ?? []).filter((item) => item.listItemId !== listItemId);
+      return next;
+    });
+    setLists(prev => prev.map((l) => (l.id === listId ? { ...l, count: Math.max(0, l.count - 1) } : l)));
+  };
+
+  const deleteList = async (id: string) => {
+    if (!userId) return;
+    const { error } = await supabase
+      .from("lists")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", userId);
+    if (error) {
+      setListsError(error.message);
+      return;
+    }
+    setListsError(null);
+    setLists(prev => prev.filter(l => l.id !== id));
+    setExpandedListIds(prev => {
+      const { [id]: _removed, ...rest } = prev;
+      return rest;
+    });
+    setListItemsByListId(prev => {
+      const { [id]: _removed, ...rest } = prev;
+      return rest;
+    });
+    // Re-sync from backend so UI always reflects persisted state.
+    await loadLists();
+  };
 
   const hubs = [
     { id: 1, name: "Cars", emoji: "🚗", color: "#3b82f6" },
@@ -525,42 +697,90 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
                 style={{ background: "var(--gradient-btn)" }}>+</button>
             )}
           </div>
+          {listsError && (
+            <p className="text-[10px] mb-2 leading-snug" style={{ color: "#f87171" }}>{listsError}</p>
+          )}
           <div className="space-y-2">
             {showNewList && <NewListForm onAdd={addList} onCancel={() => setShowNewList(false)} />}
+            {listsLoading && !showNewList && (
+              <p className="text-xs text-center py-3" style={{ color: "var(--text-muted)" }}>Loading lists…</p>
+            )}
             {lists.map(list => (
-              <div key={list.id}
-                className="flex items-center justify-between w-full px-3 py-2.5 rounded-xl"
-                style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}>
-                {editingListId === list.id ? (
-                  <input ref={listInputRef} value={listDraft}
-                    onChange={e => setListDraft(e.target.value)}
-                    onBlur={() => commitListRename(list.id)}
-                    onKeyDown={e => {
-                      if (e.key === "Enter") commitListRename(list.id);
-                      if (e.key === "Escape") setEditingListId(null);
-                    }}
-                    className="flex-1 text-xs font-medium bg-transparent outline-none border-b mr-2"
-                    style={{ color: "var(--text)", borderColor: "#a78bfa" }} />
-                ) : (
-                  <span className="flex-1 text-sm font-medium cursor-pointer hover:opacity-70 truncate"
-                    onClick={() => { setEditingListId(list.id); setListDraft(list.label); }}
-                    title="Click to rename">
+              <div key={list.id} className="rounded-xl" style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}>
+                <div className="flex items-center justify-between w-full px-3 py-2.5">
+                  <span
+                    className="flex-1 text-sm font-medium cursor-pointer hover:opacity-70 truncate"
+                    onClick={() => void toggleListExpanded(list.id)}
+                    title="Click to expand list"
+                  >
                     {list.label}
                   </span>
-                )}
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-xs px-2 py-0.5 rounded-full"
-                    style={{ background: "rgba(139,92,246,0.15)", color: "#a78bfa" }}>
-                    {list.count}
-                  </span>
-                  <button onClick={() => deleteList(list.id)} className="hover:opacity-80" style={{ color: "var(--text-muted)" }}>
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs px-2 py-0.5 rounded-full"
+                      style={{ background: "rgba(139,92,246,0.15)", color: "#a78bfa" }}>
+                      {list.count}
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void deleteList(list.id);
+                      }}
+                      className="hover:opacity-80"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
+                {expandedListIds[list.id] && (
+                  <div className="px-3 pb-3 pt-1 space-y-1.5">
+                    {(listItemsByListId[list.id] ?? []).length === 0 ? (
+                      <p className="text-xs leading-snug" style={{ color: "var(--text-muted)" }}>
+                        No items in this list yet.
+                      </p>
+                    ) : (listItemsByListId[list.id] ?? []).map((entry, idx) => (
+                      <div key={`${list.id}-${idx}`} className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          className="block text-xs leading-snug text-left hover:opacity-80 truncate"
+                          style={{ color: "#a78bfa" }}
+                          onClick={() => {
+                            if (!entry.itemId || !entry.hubSlug || !entry.hobbySlug) return;
+                            setActiveNav("discover");
+                            setSubPage({
+                              type: "item",
+                              categoryId: entry.hobbySlug,
+                              hubId: entry.hubSlug,
+                              itemId: entry.itemId,
+                            });
+                          }}
+                        >
+                          {entry.title}
+                        </button>
+                        <button
+                          type="button"
+                          className="shrink-0 hover:opacity-80"
+                          style={{ color: "var(--text-muted)" }}
+                          onClick={() => void removeListItem(list.id, entry.listItemId)}
+                          title="Remove from list"
+                        >
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
+            {!listsLoading && lists.length === 0 && !showNewList && (
+              <p className="text-xs text-center py-4" style={{ color: "var(--text-muted)" }}>
+                No lists yet. Hit + to add one!
+              </p>
+            )}
           </div>
         </div>
 

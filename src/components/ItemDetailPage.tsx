@@ -164,6 +164,12 @@ export default function ItemDetailPage({
     const [submitted, setSubmitted] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
+    const [authUserId, setAuthUserId] = useState<string | null>(null);
+    const [lists, setLists] = useState<Array<{ id: string; title: string }>>([]);
+    const [selectedListId, setSelectedListId] = useState<string>("");
+    const [savingToList, setSavingToList] = useState(false);
+    const [listSaveMessage, setListSaveMessage] = useState<string | null>(null);
+    const [listSaveError, setListSaveError] = useState<string | null>(null);
 
     function formatTimeAgo(dateString: string): string {
         const now = new Date();
@@ -281,6 +287,43 @@ export default function ItemDetailPage({
             cancelled = true;
         };
     }, [itemId]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadUserLists = async () => {
+            const {
+                data: { user: authUser },
+            } = await supabase.auth.getUser();
+            if (cancelled) return;
+            setAuthUserId(authUser?.id ?? null);
+
+            if (!authUser?.id) {
+                setLists([]);
+                setSelectedListId("");
+                return;
+            }
+
+            const { data, error } = await supabase
+                .from("lists")
+                .select("id, title")
+                .eq("user_id", authUser.id)
+                .order("created_at", { ascending: true });
+            if (cancelled) return;
+            if (error) {
+                setLists([]);
+                setSelectedListId("");
+                return;
+            }
+
+            const rows = (data ?? []) as Array<{ id: string; title: string }>;
+            setLists(rows);
+            setSelectedListId((prev) => prev || rows[0]?.id || "");
+        };
+        void loadUserLists();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     useEffect(() => {
         const h = getHubById(categoryId, hubId);
@@ -402,6 +445,56 @@ export default function ItemDetailPage({
         setSubmitted(true);
     }
 
+    async function handleAddToList() {
+        if (!authUserId) {
+            setListSaveError("You must be signed in to add items to lists.");
+            setListSaveMessage(null);
+            return;
+        }
+        if (!selectedListId) {
+            setListSaveError("Select a list first.");
+            setListSaveMessage(null);
+            return;
+        }
+
+        setSavingToList(true);
+        setListSaveError(null);
+        setListSaveMessage(null);
+
+        const { data: existing, error: existsErr } = await supabase
+            .from("list_items")
+            .select("id")
+            .eq("list_id", selectedListId)
+            .eq("item_id", itemId)
+            .maybeSingle();
+        if (existsErr) {
+            setSavingToList(false);
+            setListSaveError(existsErr.message);
+            return;
+        }
+        if (existing) {
+            setSavingToList(false);
+            setListSaveMessage("Item is already in that list.");
+            return;
+        }
+
+        const { error } = await supabase
+            .from("list_items")
+            .insert({
+                list_id: selectedListId,
+                item_id: itemId,
+                title: item.name,
+                status: "planned",
+            });
+
+        setSavingToList(false);
+        if (error) {
+            setListSaveError(error.message);
+            return;
+        }
+        setListSaveMessage("Added to list.");
+    }
+
     return (
         <div ref={impressionRef} className="max-w-3xl mx-auto px-6 py-8">
             {/* Back button */}
@@ -500,6 +593,67 @@ export default function ItemDetailPage({
             </div>
 
             {/* ── Rate This ──────────────────────────────────────────── */}
+            <div
+                className="rounded-2xl p-6 mb-6"
+                style={{
+                    background: "var(--surface2)",
+                    border: "1px solid var(--border)",
+                }}
+            >
+                <h2
+                    className="text-lg font-bold mb-3"
+                    style={{ fontFamily: "Syne, sans-serif", color: "#a78bfa" }}
+                >
+                    Add to List
+                </h2>
+                {lists.length === 0 ? (
+                    <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+                        No lists yet. Create one from your profile sidebar.
+                    </p>
+                ) : (
+                    <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+                        <select
+                            value={selectedListId}
+                            onChange={(e) => setSelectedListId(e.target.value)}
+                            className="rounded-xl px-3 py-2 text-sm outline-none flex-1"
+                            style={{
+                                background: "var(--surface)",
+                                border: "1px solid var(--border)",
+                                color: "var(--text)",
+                            }}
+                        >
+                            {lists.map((list) => (
+                                <option key={list.id} value={list.id}>
+                                    {list.title}
+                                </option>
+                            ))}
+                        </select>
+                        <button
+                            type="button"
+                            onClick={handleAddToList}
+                            disabled={savingToList}
+                            className="px-5 py-2 rounded-full text-sm font-semibold transition-all hover:scale-105 disabled:opacity-40 disabled:cursor-not-allowed"
+                            style={{
+                                background: "linear-gradient(135deg, #7c3aed, #a78bfa)",
+                                color: "#fff",
+                            }}
+                        >
+                            {savingToList ? "Adding..." : "Add Item"}
+                        </button>
+                    </div>
+                )}
+                {listSaveMessage && (
+                    <p className="text-xs mt-3" style={{ color: "#22c55e" }}>
+                        {listSaveMessage}
+                    </p>
+                )}
+                {listSaveError && (
+                    <p className="text-xs mt-3" style={{ color: "#f87171" }}>
+                        {listSaveError}
+                    </p>
+                )}
+            </div>
+
             <div
                 className="rounded-2xl p-6 mb-8"
                 style={{
