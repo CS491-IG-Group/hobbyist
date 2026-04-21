@@ -1,8 +1,10 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { getHubById, getItemByIndex, type ItemReview } from "./hubData";
+import { getHubById, type ItemReview } from "./hubData";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
+import { supabase } from "../lib/supabase";
+import { fetchHubBySlug } from "../lib/hubDb";
 
 /* ------------------------------------------------------------------ */
 /*  Icons                                                              */
@@ -131,25 +133,60 @@ function ReviewCard({ review }: { review: ItemReview }) {
 interface ItemDetailPageProps {
     categoryId: string;
     hubId: string;
-    itemIndex: number;
+    itemId: number;
     onBack: () => void;
 }
 
 export default function ItemDetailPage({
     categoryId,
     hubId,
-    itemIndex,
+    itemId,
     onBack,
 }: ItemDetailPageProps) {
     const { userId, sessionId } = useAnalytics();
     const hub = getHubById(categoryId, hubId);
-    const item = getItemByIndex(categoryId, hubId, itemIndex);
+    const [dbItem, setDbItem] = useState<{ name: string; item_type: string | null; description: string | null; image_url: string | null } | null>(null);
+    const item = dbItem
+        ? {
+            name: dbItem.name,
+            year: dbItem.item_type ?? "item",
+            rating: "N/A",
+            genre: dbItem.item_type ?? undefined,
+            description: dbItem.description ?? "",
+            reviews: [],
+        }
+        : null;
 
     const [userRating, setUserRating] = useState<number>(0);
     const [hoverRating, setHoverRating] = useState<number>(0);
     const [reviewText, setReviewText] = useState("");
-    const [userReviews, setUserReviews] = useState<ItemReview[]>([]);
+    const [reviews, setReviews] = useState<ItemReview[]>([]);
     const [submitted, setSubmitted] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
+    const [submitting, setSubmitting] = useState(false);
+
+    function formatTimeAgo(dateString: string): string {
+        const now = new Date();
+        const then = new Date(dateString);
+        const diffMs = now.getTime() - then.getTime();
+        const minutes = Math.floor(diffMs / (1000 * 60));
+        const hours = Math.floor(diffMs / (1000 * 60 * 60));
+        const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        if (minutes < 1) return "Just now";
+        if (minutes < 60) return `${minutes}m ago`;
+        if (hours < 24) return `${hours}h ago`;
+        return `${days}d ago`;
+    }
+
+    function initialsFromName(name: string): string {
+        const parts = name
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean);
+        if (parts.length === 0) return "US";
+        if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+        return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+    }
 
     const impressionRef = useContentImpression({
         userId,
@@ -160,14 +197,94 @@ export default function ItemDetailPage({
             kind: "item_detail_dwell",
             category_id: categoryId,
             hub_id: hubId,
-            item_index: itemIndex,
+            item_id: itemId,
             item_name: item?.name,
         },
     });
 
     useEffect(() => {
+        let cancelled = false;
+        const loadItem = async () => {
+            const hubRow = await fetchHubBySlug(hubId);
+            if (!hubRow?.id) {
+                if (!cancelled) setDbItem(null);
+                return;
+            }
+            const { data, error } = await supabase
+                .from("items")
+                .select("name, item_type, description, image_url")
+                .eq("id", itemId)
+                .eq("hub_id", hubRow.id)
+                .maybeSingle();
+            if (cancelled) return;
+            if (error || !data) {
+                setDbItem(null);
+                return;
+            }
+            setDbItem(data);
+        };
+        void loadItem();
+        return () => {
+            cancelled = true;
+        };
+    }, [hubId, itemId]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const loadReviews = async () => {
+            const { data, error } = await supabase
+                .from("item_reviews")
+                .select("id, rating, review_text, created_at, updated_at, user_id, users!user_id(display_name, handle)")
+                .eq("item_id", itemId)
+                .order("updated_at", { ascending: false });
+
+            if (cancelled) return;
+            if (error) {
+                setReviews([]);
+                return;
+            }
+
+            const {
+                data: { user: authUser },
+            } = await supabase.auth.getUser();
+
+            const mapped: ItemReview[] = (data ?? []).map((row: any) => {
+                const profile = Array.isArray(row.users) ? row.users[0] ?? null : row.users ?? null;
+                const displayName =
+                    profile?.display_name?.trim() ||
+                    profile?.handle?.trim()?.replace(/^@/, "") ||
+                    "Member";
+                const dateSource = row.updated_at ?? row.created_at;
+                return {
+                    author: displayName,
+                    avatar: initialsFromName(displayName),
+                    rating: Number(row.rating) || 0,
+                    text: row.review_text ?? "",
+                    date: formatTimeAgo(dateSource),
+                };
+            });
+
+            setReviews(mapped);
+
+            // Pre-fill review UI for current user if they already reviewed this item.
+            if (authUser?.id) {
+                const mine = (data ?? []).find((row: any) => row.user_id === authUser.id);
+                if (mine) {
+                    setUserRating(Number(mine.rating) || 0);
+                    setReviewText(mine.review_text ?? "");
+                }
+            }
+        };
+
+        void loadReviews();
+        return () => {
+            cancelled = true;
+        };
+    }, [itemId]);
+
+    useEffect(() => {
         const h = getHubById(categoryId, hubId);
-        const it = getItemByIndex(categoryId, hubId, itemIndex);
+        const it = item;
         if (!h || !it) return;
         void logContentEvent({
             userId,
@@ -178,26 +295,39 @@ export default function ItemDetailPage({
                 screen: "item_detail",
                 category_id: categoryId,
                 hub_id: hubId,
-                item_index: itemIndex,
+                item_id: itemId,
                 item_name: it.name,
             },
         });
-    }, [userId, sessionId, categoryId, hubId, itemIndex]);
+    }, [userId, sessionId, categoryId, hubId, itemId, item]);
 
     if (!hub || !item) {
         return (
             <div className="max-w-3xl mx-auto px-6 py-8">
+                <button
+                    onClick={onBack}
+                    className="flex items-center gap-1 mb-6 text-sm font-medium transition-all hover:opacity-80"
+                    style={{ color: "#a78bfa" }}
+                >
+                    <BackIcon />
+                    <span>Back</span>
+                </button>
                 <p style={{ color: "var(--text-muted)" }}>Item not found.</p>
             </div>
         );
     }
 
-    const allReviews = [...userReviews, ...(item.reviews ?? [])];
+    const allReviews = reviews;
     const reviewCount = allReviews.length;
     const displayRating = hoverRating || userRating;
+    const averageRating =
+        reviewCount > 0
+            ? (allReviews.reduce((sum, review) => sum + review.rating, 0) / reviewCount).toFixed(1)
+            : item.rating;
 
-    function handleSubmitReview() {
+    async function handleSubmitReview() {
         if (userRating === 0 || reviewText.trim().length === 0) return;
+        setSubmitError(null);
         void logContentEvent({
             userId,
             sessionId,
@@ -207,22 +337,69 @@ export default function ItemDetailPage({
                 action: "submit_review",
                 category_id: categoryId,
                 hub_id: hubId,
-                item_index: itemIndex,
+                item_id: itemId,
                 item_name: item.name,
                 rating: userRating,
                 review_char_len: reviewText.trim().length,
             },
         });
-        const newReview: ItemReview = {
-            author: "You",
-            avatar: "YO",
-            rating: userRating,
-            text: reviewText.trim(),
-            date: "Just now",
-        };
-        setUserReviews(prev => [newReview, ...prev]);
+
+        const {
+            data: { user: authUser },
+        } = await supabase.auth.getUser();
+        if (!authUser) {
+            setSubmitError("You must be signed in to post a review.");
+            return;
+        }
+
+        setSubmitting(true);
+        const { error } = await supabase
+            .from("item_reviews")
+            .upsert(
+                {
+                    item_id: itemId,
+                    user_id: authUser.id,
+                    rating: userRating,
+                    review_text: reviewText.trim(),
+                },
+                { onConflict: "item_id,user_id" }
+            );
+
+        if (error) {
+            setSubmitError(error.message);
+            setSubmitting(false);
+            return;
+        }
+
+        const { data, error: refetchError } = await supabase
+            .from("item_reviews")
+            .select("id, rating, review_text, created_at, updated_at, users!user_id(display_name, handle)")
+            .eq("item_id", itemId)
+            .order("updated_at", { ascending: false });
+        setSubmitting(false);
+        if (refetchError) {
+            setSubmitError(refetchError.message);
+            return;
+        }
+
+        const mapped: ItemReview[] = (data ?? []).map((row: any) => {
+            const profile = Array.isArray(row.users) ? row.users[0] ?? null : row.users ?? null;
+            const displayName =
+                profile?.display_name?.trim() ||
+                profile?.handle?.trim()?.replace(/^@/, "") ||
+                "Member";
+            const dateSource = row.updated_at ?? row.created_at;
+            return {
+                author: displayName,
+                avatar: initialsFromName(displayName),
+                rating: Number(row.rating) || 0,
+                text: row.review_text ?? "",
+                date: formatTimeAgo(dateSource),
+            };
+        });
+
+        setReviews(mapped);
         setSubmitted(true);
-        setReviewText("");
     }
 
     return (
@@ -239,7 +416,7 @@ export default function ItemDetailPage({
                             action: "back_to_hub",
                             category_id: categoryId,
                             hub_id: hubId,
-                            item_index: itemIndex,
+                            item_id: itemId,
                             item_name: item.name,
                         },
                     });
@@ -268,7 +445,15 @@ export default function ItemDetailPage({
                             background: `linear-gradient(135deg, ${hub.gradientFrom}, ${hub.gradientTo})`,
                         }}
                     >
-                        {hub.emoji}
+                        {dbItem?.image_url ? (
+                            <img
+                                src={dbItem.image_url}
+                                alt={item.name}
+                                className="w-full h-full object-cover rounded-xl"
+                            />
+                        ) : (
+                            hub.emoji
+                        )}
                     </div>
 
                     {/* Info */}
@@ -301,7 +486,7 @@ export default function ItemDetailPage({
 
                         {/* Rating badge + count */}
                         <div className="flex items-center gap-3">
-                            <RatingBadge rating={item.rating} />
+                            <RatingBadge rating={averageRating} />
                             <span className="text-xs" style={{ color: "var(--text-muted)" }}>
                                 <strong style={{ color: "var(--text)" }}>{reviewCount}</strong>{" "}
                                 {reviewCount === 1 ? "review" : "reviews"}
@@ -372,14 +557,14 @@ export default function ItemDetailPage({
                             </p>
                             <button
                                 onClick={handleSubmitReview}
-                                disabled={reviewText.trim().length === 0}
+                                disabled={reviewText.trim().length === 0 || submitting}
                                 className="px-5 py-2 rounded-full text-sm font-semibold transition-all hover:scale-105 disabled:opacity-40 disabled:cursor-not-allowed"
                                 style={{
                                     background: "linear-gradient(135deg, #7c3aed, #a78bfa)",
                                     color: "#fff",
                                 }}
                             >
-                                Post Review
+                                {submitting ? "Posting..." : "Post Review"}
                             </button>
                         </div>
                     </div>
@@ -388,6 +573,11 @@ export default function ItemDetailPage({
                 {submitted && (
                     <p className="text-xs mt-3" style={{ color: "#22c55e" }}>
                         ✓ Review posted! Thank you for sharing your thoughts.
+                    </p>
+                )}
+                {submitError && (
+                    <p className="text-xs mt-3" style={{ color: "#f87171" }}>
+                        {submitError}
                     </p>
                 )}
             </div>
