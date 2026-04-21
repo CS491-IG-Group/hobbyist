@@ -70,9 +70,9 @@ export default function LoginOrbitBackground({ theme = "dark" }: { theme?: "dark
 
       const bg = ctx.createLinearGradient(0, 0, 0, h);
       if (isLight) {
-        bg.addColorStop(0, "#f8f7ff");
-        bg.addColorStop(0.42, "#eef2ff");
-        bg.addColorStop(1, "#e7ecff");
+        bg.addColorStop(0, "#f1efff");
+        bg.addColorStop(0.42, "#e6e2ff");
+        bg.addColorStop(1, "#ddd7ff");
       } else {
         bg.addColorStop(0, "#090a14");
         bg.addColorStop(0.45, "#0e1022");
@@ -221,7 +221,7 @@ export default function LoginOrbitBackground({ theme = "dark" }: { theme?: "dark
     theme === "light"
       ? {
           background:
-            "radial-gradient(circle at 20% 18%, rgba(129, 140, 248, 0.14), transparent 34%), radial-gradient(circle at 78% 24%, rgba(56, 189, 248, 0.12), transparent 26%), linear-gradient(to bottom, rgba(255,255,255,0.3), rgba(238,242,255,0.54))",
+            "radial-gradient(circle at 20% 18%, rgba(129,140,248,0.2), transparent 36%), radial-gradient(circle at 78% 24%, rgba(167,139,250,0.16), transparent 28%), linear-gradient(to bottom, rgba(245,243,255,0.24), rgba(221,214,254,0.48))",
         }
       : {
           background:

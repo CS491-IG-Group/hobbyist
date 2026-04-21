@@ -19,10 +19,10 @@ export default function LoginPage({ onLogin, onBackToLanding }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const cardBg = theme === "light"
-    ? "color-mix(in srgb, #ffffff 84%, #eef2ff 16%)"
+    ? "color-mix(in srgb, #f8f5ff 82%, #ddd6fe 18%)"
     : "color-mix(in srgb, var(--surface) 62%, transparent)";
   const fieldBg = theme === "light"
-    ? "color-mix(in srgb, #ffffff 88%, #e0e7ff 12%)"
+    ? "color-mix(in srgb, #faf7ff 86%, #ddd6fe 14%)"
     : "color-mix(in srgb, var(--surface2) 58%, transparent)";
 
   useEffect(() => {
