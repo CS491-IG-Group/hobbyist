@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import OrbitLogo from "./OrbitLogo";
+import LoginOrbitBackground from "./LoginOrbitBackground";
 import { supabase } from "@/lib/supabase";
 
 interface Props {
@@ -15,6 +16,8 @@ export default function LoginPage({ onLogin }: Props) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const cardBg = "color-mix(in srgb, var(--surface) 62%, transparent)";
+  const fieldBg = "color-mix(in srgb, var(--surface2) 58%, transparent)";
 
   const clearError = () => setError(null);
 
@@ -83,10 +86,12 @@ export default function LoginPage({ onLogin }: Props) {
 
   return (
     <div
-      className="min-h-screen flex flex-col items-center justify-center px-4"
+      className="relative min-h-screen flex flex-col items-center justify-center px-4 overflow-hidden"
       style={{ background: "var(--bg)" }}
     >
-      <div className="flex flex-col items-center mb-8">
+      <LoginOrbitBackground />
+
+      <div className="relative z-10 flex flex-col items-center mb-8">
         <OrbitLogo size={72} />
         <h1
           className="text-2xl font-bold mt-3"
@@ -100,14 +105,19 @@ export default function LoginPage({ onLogin }: Props) {
       </div>
 
       <div
-        className="w-full max-w-md rounded-2xl p-8"
-        style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+        className="relative z-10 w-full max-w-md rounded-2xl p-8"
+        style={{
+          background: cardBg,
+          border: "1px solid color-mix(in srgb, var(--border) 75%, #a78bfa 25%)",
+          backdropFilter: "blur(14px)",
+          WebkitBackdropFilter: "blur(14px)",
+        }}
       >
         <form onSubmit={handleSubmit}>
           {/* Tab switcher */}
           <div
             className="flex rounded-xl mb-6 p-1"
-            style={{ background: "var(--surface2)" }}
+            style={{ background: fieldBg }}
           >
             {(["login", "signup"] as const).map((t) => (
               <button
@@ -130,7 +140,7 @@ export default function LoginPage({ onLogin }: Props) {
             {tab === "signup" && (
               <div
                 className="flex items-center gap-3 rounded-xl px-4 py-3"
-                style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}
+                style={{ background: fieldBg, border: "1px solid var(--border)" }}
               >
                 <svg
                   width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -155,7 +165,7 @@ export default function LoginPage({ onLogin }: Props) {
             {/* Email */}
             <div
               className="flex items-center gap-3 rounded-xl px-4 py-3"
-              style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}
+              style={{ background: fieldBg, border: "1px solid var(--border)" }}
             >
               <svg
                 width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -180,7 +190,7 @@ export default function LoginPage({ onLogin }: Props) {
             {/* Password */}
             <div
               className="flex items-center gap-3 rounded-xl px-4 py-3"
-              style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}
+              style={{ background: fieldBg, border: "1px solid var(--border)" }}
             >
               <svg
                 width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -207,7 +217,7 @@ export default function LoginPage({ onLogin }: Props) {
               <div
                 className="flex items-center gap-3 rounded-xl px-4 py-3"
                 style={{
-                  background: "var(--surface2)",
+                  background: fieldBg,
                   border: `1px solid ${confirmPassword && confirmPassword !== password
                     ? "#f87171"
                     : confirmPassword && confirmPassword === password
@@ -301,7 +311,7 @@ export default function LoginPage({ onLogin }: Props) {
               key={provider}
               className="py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
               style={{
-                background: "var(--surface2)",
+                background: fieldBg,
                 border: "1px solid var(--border)",
                 color: "var(--text)",
               }}

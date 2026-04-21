@@ -4,6 +4,7 @@ import type { Session } from "@supabase/supabase-js";
 import LoginPage from "@/components/LoginPage";
 import DashboardPage from "@/components/DashboardPage";
 import OnboardingModal from "@/components/OnboardingModal";
+import OrbitBackground from "@/components/OrbitBackground";
 import { supabase } from "@/lib/supabase";
 import { withTimeout } from "@/lib/withTimeout";
 
@@ -22,6 +23,15 @@ interface UsersProfileRow {
   onboarding_completed: boolean | null;
   display_name: string | null;
   handle: string | null;
+}
+
+function AuthenticatedShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative min-h-screen overflow-hidden" style={{ background: "var(--bg)" }}>
+      <OrbitBackground />
+      <div className="relative z-10 min-h-screen">{children}</div>
+    </div>
+  );
 }
 
 /** True if the wizard finished, or the user already filled a public profile elsewhere (e.g. Edit profile). */
@@ -171,7 +181,7 @@ export default function Home() {
   // Show the dashboard behind the modal so the transition feels seamless
   if (view === "onboarding" && onboardingUser) {
     return (
-      <>
+      <AuthenticatedShell>
         {/* Blurred dashboard shell so user sees they're almost in */}
         <div style={{ filter: "blur(2px)", pointerEvents: "none", userSelect: "none" }}>
           <DashboardPage onLogout={handleLogout} authUserId={currentUserId} />
@@ -184,10 +194,14 @@ export default function Home() {
             setView("dashboard");
           }}
         />
-      </>
+      </AuthenticatedShell>
     );
   }
 
   // ── Dashboard ────────────────────────────────────────────────────────
-  return <DashboardPage onLogout={handleLogout} authUserId={currentUserId} />;
+  return (
+    <AuthenticatedShell>
+      <DashboardPage onLogout={handleLogout} authUserId={currentUserId} />
+    </AuthenticatedShell>
+  );
 }

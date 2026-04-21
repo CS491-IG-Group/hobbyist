@@ -20,6 +20,7 @@ const NicheFeed = dynamic(() => import("./NicheFeed"), { loading: () => <MainPan
 const ProfilePage = dynamic(() => import("./ProfilePage"), { loading: () => <MainPaneLoading /> });
 const AccountSettingsPage = dynamic(() => import("./AccountSettingsPage"), { loading: () => <MainPaneLoading /> });
 const NotificationsPage = dynamic(() => import("./NotificationsPage"), { loading: () => <MainPaneLoading /> });
+const ChatbotPage = dynamic(() => import("./ChatbotPage"), { loading: () => <MainPaneLoading /> });
 
 type SubPage =
   | null
@@ -408,19 +409,19 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
 
   return (
     <AnalyticsProvider userId={userId} sessionId={sessionId}>
-    <div className="flex min-h-screen" style={{ background: "var(--bg)" }}>
-      <Sidebar
-        activeNav={activeNav}
-        setActiveNav={handleNav}
-        onLogout={onLogout}
-        unreadCount={unreadCount}
-        onSelectHub={(categoryId, hubId) => {
-          setActiveNav("discover");
-          setSubPage({ type: "hub", categoryId, hubId });
-        }}
-      />
+    <div className="flex min-h-screen">
+        <Sidebar
+          activeNav={activeNav}
+          setActiveNav={handleNav}
+          onLogout={onLogout}
+          unreadCount={unreadCount}
+          onSelectHub={(categoryId, hubId) => {
+            setActiveNav("discover");
+            setSubPage({ type: "hub", categoryId, hubId });
+          }}
+        />
 
-      <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto">
         {activeNav === "timeline" ? (
           <TimelinePage
             joinedHubs={joinedHubs}
@@ -471,11 +472,13 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
           )
         ) : activeNav === "notifications" ? (
           <NotificationsPage />
+        ) : activeNav === "assistant" ? (
+          <ChatbotPage />
         ) : null}
-      </main>
+        </main>
 
-      {activeNav === "profile" && <aside className="hidden lg:flex flex-col w-72 shrink-0 sticky top-0 h-screen overflow-y-auto p-4 gap-5"
-        style={{ borderLeft: "1px solid var(--border)" }}>
+        {activeNav === "profile" && <aside className="hidden lg:flex flex-col w-72 shrink-0 sticky top-0 h-screen overflow-y-auto p-4 gap-5"
+          style={{ borderLeft: "1px solid var(--border)" }}>
 
         {/* ── Goals ── */}
         <div>
@@ -583,7 +586,7 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
           </div>
         </div>
 
-      </aside>}
+        </aside>}
     </div>
     </AnalyticsProvider>
   );
