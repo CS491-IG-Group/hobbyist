@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import type { Session } from "@supabase/supabase-js";
+import LandingPage from "@/components/LandingPage";
 import LoginPage from "@/components/LoginPage";
 import DashboardPage from "@/components/DashboardPage";
 import OnboardingModal from "@/components/OnboardingModal";
@@ -8,7 +9,7 @@ import OrbitBackground from "@/components/OrbitBackground";
 import { supabase } from "@/lib/supabase";
 import { withTimeout } from "@/lib/withTimeout";
 
-type View = "loading" | "login" | "onboarding" | "dashboard";
+type View = "landing" | "loading" | "login" | "onboarding" | "dashboard";
 
 interface OnboardingUser {
   id: string;
@@ -84,7 +85,7 @@ async function loadUsersProfile(userId: string): Promise<
 }
 
 export default function Home() {
-  const [view, setView] = useState<View>("login");
+  const [view, setView] = useState<View>("landing");
   const [onboardingUser, setOnboardingUser] = useState<OnboardingUser | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
@@ -92,7 +93,7 @@ export default function Home() {
     if (!session) {
       setCurrentUserId(null);
       setOnboardingUser(null);
-      setView("login");
+      setView("landing");
       return;
     }
 
@@ -130,10 +131,10 @@ export default function Home() {
       await applySession(session ?? null);
     } catch (e) {
       if (process.env.NODE_ENV === "development") {
-        console.warn("[auth] getSession failed or stalled; showing login", e);
+        console.warn("[auth] getSession failed or stalled; showing landing", e);
       }
       setOnboardingUser(null);
-      setView("login");
+      setView("landing");
     }
   }
 
@@ -150,7 +151,7 @@ export default function Home() {
           console.warn("[auth] onAuthStateChange", e);
         }
         setOnboardingUser(null);
-        setView("login");
+        setView("landing");
       }
     });
 
@@ -159,8 +160,9 @@ export default function Home() {
 
   async function handleLogout() {
     await supabase.auth.signOut();
+    setCurrentUserId(null);
     setOnboardingUser(null);
-    setView("login");
+    setView("landing");
   }
 
   // ── Loading ──────────────────────────────────────────────────────────
@@ -172,9 +174,24 @@ export default function Home() {
     );
   }
 
+  // ── Landing ──────────────────────────────────────────────────────────
+  if (view === "landing") {
+    return (
+      <LandingPage
+        onGetStarted={() => setView("login")}
+        onLogin={() => setView("login")}
+      />
+    );
+  }
+
   // ── Login ────────────────────────────────────────────────────────────
   if (view === "login") {
-    return <LoginPage onLogin={() => checkSession()} />;
+    return (
+      <LoginPage
+        onLogin={() => checkSession()}
+        onBackToLanding={() => setView("landing")}
+      />
+    );
   }
 
   // ── Onboarding ───────────────────────────────────────────────────────

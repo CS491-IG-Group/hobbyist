@@ -1,14 +1,15 @@
 "use client";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import OrbitLogo from "./OrbitLogo";
 import LoginOrbitBackground from "./LoginOrbitBackground";
 import { supabase } from "@/lib/supabase";
 
 interface Props {
   onLogin: () => void;
+  onBackToLanding: () => void;
 }
 
-export default function LoginPage({ onLogin }: Props) {
+export default function LoginPage({ onLogin, onBackToLanding }: Props) {
   const [tab, setTab] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [userHandle, setUserHandle] = useState("");
@@ -16,8 +17,27 @@ export default function LoginPage({ onLogin }: Props) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const cardBg = "color-mix(in srgb, var(--surface) 62%, transparent)";
-  const fieldBg = "color-mix(in srgb, var(--surface2) 58%, transparent)";
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const cardBg = theme === "light"
+    ? "color-mix(in srgb, #ffffff 84%, #eef2ff 16%)"
+    : "color-mix(in srgb, var(--surface) 62%, transparent)";
+  const fieldBg = theme === "light"
+    ? "color-mix(in srgb, #ffffff 88%, #e0e7ff 12%)"
+    : "color-mix(in srgb, var(--surface2) 58%, transparent)";
+
+  useEffect(() => {
+    const saved = localStorage.getItem("theme") as "dark" | "light" | null;
+    const initial = saved ?? "dark";
+    setTheme(initial);
+    document.documentElement.setAttribute("data-theme", initial);
+  }, []);
+
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    localStorage.setItem("theme", next);
+    document.documentElement.setAttribute("data-theme", next);
+  }
 
   const clearError = () => setError(null);
 
@@ -89,19 +109,41 @@ export default function LoginPage({ onLogin }: Props) {
       className="relative min-h-screen flex flex-col items-center justify-center px-4 overflow-hidden"
       style={{ background: "var(--bg)" }}
     >
-      <LoginOrbitBackground />
+      <LoginOrbitBackground theme={theme} />
+      <button
+        type="button"
+        onClick={toggleTheme}
+        className="absolute top-4 right-4 z-20 px-3 py-2 rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity"
+        style={{
+          color: "var(--text)",
+          border: "1px solid var(--border)",
+          background: "color-mix(in srgb, var(--surface2) 45%, transparent)",
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
+        }}
+      >
+        {theme === "dark" ? "Light mode" : "Dark mode"}
+      </button>
 
       <div className="relative z-10 flex flex-col items-center mb-8">
         <OrbitLogo size={72} />
         <h1
           className="text-2xl font-bold mt-3"
-          style={{ color: "#a78bfa", fontFamily: "Syne, sans-serif" }}
+          style={{ color: theme === "light" ? "#4f46e5" : "#a78bfa", fontFamily: "Syne, sans-serif" }}
         >
           orbit.r
         </h1>
-        <p className="text-sm mt-1" style={{ color: "var(--text-dim)" }}>
+        <p className="text-sm mt-1" style={{ color: theme === "light" ? "rgba(30, 41, 59, 0.75)" : "var(--text-dim)" }}>
           Explore niche hubs in your orbit
         </p>
+        <button
+          type="button"
+          onClick={onBackToLanding}
+          className="mt-3 text-xs font-semibold hover:opacity-85 transition-opacity"
+          style={{ color: theme === "light" ? "#4f46e5" : "#c4b5fd" }}
+        >
+          ← Back to landing
+        </button>
       </div>
 
       <div
@@ -109,8 +151,8 @@ export default function LoginPage({ onLogin }: Props) {
         style={{
           background: cardBg,
           border: "1px solid color-mix(in srgb, var(--border) 75%, #a78bfa 25%)",
-          backdropFilter: "blur(14px)",
-          WebkitBackdropFilter: "blur(14px)",
+          backdropFilter: `blur(${theme === "light" ? 8 : 14}px)`,
+          WebkitBackdropFilter: `blur(${theme === "light" ? 8 : 14}px)`,
         }}
       >
         <form onSubmit={handleSubmit}>
@@ -296,30 +338,6 @@ export default function LoginPage({ onLogin }: Props) {
           </button>
         </form>
 
-        {/* OAuth */}
-        <div className="flex items-center gap-3 my-5">
-          <div className="flex-1 h-px" style={{ background: "var(--border)" }} />
-          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-            Or continue with
-          </span>
-          <div className="flex-1 h-px" style={{ background: "var(--border)" }} />
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          {["Google", "Discord"].map((provider) => (
-            <button
-              key={provider}
-              className="py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
-              style={{
-                background: fieldBg,
-                border: "1px solid var(--border)",
-                color: "var(--text)",
-              }}
-            >
-              {provider}
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );

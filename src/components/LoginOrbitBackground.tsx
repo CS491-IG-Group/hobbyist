@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef } from "react";
 
-export default function LoginOrbitBackground() {
+export default function LoginOrbitBackground({ theme = "dark" }: { theme?: "dark" | "light" }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -64,21 +64,30 @@ export default function LoginOrbitBackground() {
     };
 
     const render = (time: number) => {
+      const isLight = theme === "light";
       const t = time * 0.001;
       ctx.clearRect(0, 0, w, h);
 
       const bg = ctx.createLinearGradient(0, 0, 0, h);
-      bg.addColorStop(0, "#090a14");
-      bg.addColorStop(0.45, "#0e1022");
-      bg.addColorStop(1, "#070811");
+      if (isLight) {
+        bg.addColorStop(0, "#f8f7ff");
+        bg.addColorStop(0.42, "#eef2ff");
+        bg.addColorStop(1, "#e7ecff");
+      } else {
+        bg.addColorStop(0, "#090a14");
+        bg.addColorStop(0.45, "#0e1022");
+        bg.addColorStop(1, "#070811");
+      }
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, w, h);
 
       for (const s of stars) {
         const x = (s.x * w + t * 10 * s.s) % (w + 20);
         const y = (s.y * h + Math.sin(t * s.s * 8 + s.x * 20) * 3 + h) % h;
-        ctx.globalAlpha = s.a + Math.sin(t * 2 + s.x * 13) * 0.08;
-        ctx.fillStyle = "white";
+        const alphaBase = isLight ? 0.22 : s.a;
+        const pulse = Math.sin(t * 2 + s.x * 13) * (isLight ? 0.04 : 0.08);
+        ctx.globalAlpha = alphaBase + pulse;
+        ctx.fillStyle = isLight ? "#475569" : "white";
         ctx.beginPath();
         ctx.arc(x, y, s.r, 0, Math.PI * 2);
         ctx.fill();
@@ -89,8 +98,8 @@ export default function LoginOrbitBackground() {
       const anchorY = h * 0.38 + Math.cos(t * 0.12) * Math.min(10, h * 0.01);
       const planetR = Math.min(138, Math.max(88, w * 0.085));
 
-      drawGlow(anchorX, anchorY, planetR * 2.8, "rgba(129,140,248,ALPHA)", 0.34);
-      drawGlow(anchorX, anchorY, planetR * 1.35, "rgba(251,191,36,ALPHA)", 0.3);
+      drawGlow(anchorX, anchorY, planetR * 2.8, "rgba(129,140,248,ALPHA)", isLight ? 0.24 : 0.34);
+      drawGlow(anchorX, anchorY, planetR * 1.35, "rgba(251,191,36,ALPHA)", isLight ? 0.24 : 0.3);
 
       // Brighter nucleus/star for solar-system style
       ctx.save();
@@ -103,20 +112,27 @@ export default function LoginOrbitBackground() {
         0,
         planetR
       );
-      planetGrad.addColorStop(0, "rgba(255, 253, 230, 1)");
-      planetGrad.addColorStop(0.3, "rgba(252, 226, 160, 0.96)");
-      planetGrad.addColorStop(0.7, "rgba(167, 139, 250, 0.9)");
-      planetGrad.addColorStop(1, "rgba(99, 102, 241, 0.88)");
+      if (isLight) {
+        planetGrad.addColorStop(0, "rgba(255, 254, 240, 0.98)");
+        planetGrad.addColorStop(0.34, "rgba(253, 230, 180, 0.9)");
+        planetGrad.addColorStop(0.72, "rgba(147, 197, 253, 0.78)");
+        planetGrad.addColorStop(1, "rgba(129, 140, 248, 0.72)");
+      } else {
+        planetGrad.addColorStop(0, "rgba(255, 253, 230, 1)");
+        planetGrad.addColorStop(0.3, "rgba(252, 226, 160, 0.96)");
+        planetGrad.addColorStop(0.7, "rgba(167, 139, 250, 0.9)");
+        planetGrad.addColorStop(1, "rgba(99, 102, 241, 0.88)");
+      }
       ctx.fillStyle = planetGrad;
       ctx.beginPath();
       ctx.arc(0, 0, planetR, 0, Math.PI * 2);
       ctx.fill();
 
       // crisp nucleus edge so it stays visible under wide rings
-      ctx.strokeStyle = "rgba(255, 242, 205, 0.78)";
+      ctx.strokeStyle = isLight ? "rgba(251, 191, 36, 0.68)" : "rgba(255, 242, 205, 0.78)";
       ctx.lineWidth = 2.2;
       ctx.shadowBlur = 12;
-      ctx.shadowColor = "rgba(251, 191, 36, 0.45)";
+      ctx.shadowColor = isLight ? "rgba(251, 191, 36, 0.34)" : "rgba(251, 191, 36, 0.45)";
       ctx.beginPath();
       ctx.arc(0, 0, planetR * 0.985, 0, Math.PI * 2);
       ctx.stroke();
@@ -128,9 +144,11 @@ export default function LoginOrbitBackground() {
         ctx.save();
         ctx.translate(anchorX, anchorY);
         ctx.rotate(plane.tilt);
-        ctx.strokeStyle = `rgba(147,197,253,${plane.alpha})`;
+        ctx.strokeStyle = isLight
+          ? `rgba(59,130,246,${plane.alpha * 0.72})`
+          : `rgba(147,197,253,${plane.alpha})`;
         ctx.shadowBlur = 6;
-        ctx.shadowColor = "rgba(96,165,250,0.24)";
+        ctx.shadowColor = isLight ? "rgba(59,130,246,0.16)" : "rgba(96,165,250,0.24)";
         ctx.lineWidth = plane.width;
         ctx.beginPath();
         ctx.ellipse(
@@ -160,16 +178,29 @@ export default function LoginOrbitBackground() {
         const y = anchorY + localX * sinT + localY * cosT;
         const depth = (Math.sin(a) + 1) / 2;
         const glowAlpha = sat.alpha * (0.22 + depth * 0.3);
-        drawGlow(x, y, sat.size * 4.2, "rgba(147,197,253,ALPHA)", glowAlpha);
-        ctx.fillStyle = idx % 2 === 0 ? "rgba(226,232,240,0.96)" : "rgba(191,219,254,0.9)";
+        drawGlow(
+          x,
+          y,
+          sat.size * 4.2,
+          isLight ? "rgba(59,130,246,ALPHA)" : "rgba(147,197,253,ALPHA)",
+          isLight ? glowAlpha * 0.75 : glowAlpha
+        );
+        ctx.fillStyle = isLight
+          ? (idx % 2 === 0 ? "rgba(51,65,85,0.88)" : "rgba(37,99,235,0.84)")
+          : (idx % 2 === 0 ? "rgba(226,232,240,0.96)" : "rgba(191,219,254,0.9)");
         ctx.beginPath();
         ctx.arc(x, y, sat.size + depth * 0.85, 0, Math.PI * 2);
         ctx.fill();
       });
 
       const haze = ctx.createRadialGradient(anchorX - 160, anchorY + 20, 0, anchorX - 160, anchorY + 20, 420);
-      haze.addColorStop(0, "rgba(118,92,255,0.13)");
-      haze.addColorStop(1, "rgba(118,92,255,0)");
+      if (isLight) {
+        haze.addColorStop(0, "rgba(99,102,241,0.11)");
+        haze.addColorStop(1, "rgba(99,102,241,0)");
+      } else {
+        haze.addColorStop(0, "rgba(118,92,255,0.13)");
+        haze.addColorStop(1, "rgba(118,92,255,0)");
+      }
       ctx.fillStyle = haze;
       ctx.fillRect(0, 0, w, h);
 
@@ -184,12 +215,23 @@ export default function LoginOrbitBackground() {
       window.removeEventListener("resize", resize);
       cancelAnimationFrame(animationFrame);
     };
-  }, []);
+  }, [theme]);
+
+  const overlayStyle =
+    theme === "light"
+      ? {
+          background:
+            "radial-gradient(circle at 20% 18%, rgba(129, 140, 248, 0.14), transparent 34%), radial-gradient(circle at 78% 24%, rgba(56, 189, 248, 0.12), transparent 26%), linear-gradient(to bottom, rgba(255,255,255,0.3), rgba(238,242,255,0.54))",
+        }
+      : {
+          background:
+            "radial-gradient(circle at 25% 20%, rgba(129,140,248,0.16), transparent 28%), radial-gradient(circle at 80% 25%, rgba(192,132,252,0.14), transparent 20%), linear-gradient(to bottom, rgba(3,7,18,0.2), rgba(3,7,18,0.45))",
+        };
 
   return (
     <div className="absolute inset-0 pointer-events-none" aria-hidden>
       <canvas ref={canvasRef} className="absolute inset-0" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_20%,rgba(129,140,248,0.16),transparent_28%),radial-gradient(circle_at_80%_25%,rgba(192,132,252,0.14),transparent_20%),linear-gradient(to_bottom,rgba(3,7,18,0.2),rgba(3,7,18,0.45))]" />
+      <div className="absolute inset-0" style={overlayStyle} />
     </div>
   );
 }
