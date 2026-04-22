@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { Session } from "@supabase/supabase-js";
 import LandingPage from "@/components/LandingPage";
 import LoginPage from "@/components/LoginPage";
@@ -88,8 +88,25 @@ export default function Home() {
   const [view, setView] = useState<View>("landing");
   const [onboardingUser, setOnboardingUser] = useState<OnboardingUser | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [manualLoginMode, setManualLoginMode] = useState(false);
+  const manualLoginModeRef = useRef(false);
 
-  const applySession = useCallback(async (session: Session | null) => {
+  useEffect(() => {
+    // Product default: always start in dark mode on fresh app load.
+    localStorage.setItem("theme", "dark");
+    document.documentElement.setAttribute("data-theme", "dark");
+  }, []);
+
+  const applySession = useCallback(async (
+    session: Session | null,
+    source: "bootstrap" | "auth_change" | "manual_submit" = "bootstrap"
+  ) => {
+    // If user intentionally opened login, ignore background auth/session updates
+    // until they explicitly submit credentials.
+    if (manualLoginModeRef.current && source !== "manual_submit") {
+      return;
+    }
+
     if (!session) {
       setCurrentUserId(null);
       setOnboardingUser(null);
@@ -120,7 +137,7 @@ export default function Home() {
     }
   }, []);
 
-  async function checkSession() {
+  async function checkSession(source: "bootstrap" | "manual_submit" = "bootstrap") {
     try {
       const { data: { session }, error } = await withTimeout(
         supabase.auth.getSession(),
@@ -128,24 +145,27 @@ export default function Home() {
         "getSession"
       );
       if (error) throw error;
-      await applySession(session ?? null);
+      await applySession(session ?? null, source);
     } catch (e) {
       if (process.env.NODE_ENV === "development") {
         console.warn("[auth] getSession failed or stalled; showing landing", e);
       }
+      if (source === "bootstrap" && manualLoginModeRef.current) {
+        return;
+      }
       setOnboardingUser(null);
-      setView("landing");
+      setView(source === "manual_submit" ? "login" : "landing");
     }
   }
 
   useEffect(() => {
-    void checkSession();
+    void checkSession("bootstrap");
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === "TOKEN_REFRESHED") return;
 
       try {
-        await applySession(session);
+        await applySession(session, "auth_change");
       } catch (e) {
         if (process.env.NODE_ENV === "development") {
           console.warn("[auth] onAuthStateChange", e);
@@ -157,6 +177,10 @@ export default function Home() {
 
     return () => subscription.unsubscribe();
   }, [applySession]);
+
+  useEffect(() => {
+    manualLoginModeRef.current = manualLoginMode;
+  }, [manualLoginMode]);
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -178,8 +202,14 @@ export default function Home() {
   if (view === "landing") {
     return (
       <LandingPage
-        onGetStarted={() => setView("login")}
-        onLogin={() => setView("login")}
+        onGetStarted={() => {
+          setManualLoginMode(true);
+          setView("login");
+        }}
+        onLogin={() => {
+          setManualLoginMode(true);
+          setView("login");
+        }}
       />
     );
   }
@@ -188,8 +218,14 @@ export default function Home() {
   if (view === "login") {
     return (
       <LoginPage
-        onLogin={() => checkSession()}
-        onBackToLanding={() => setView("landing")}
+        onLogin={() => {
+          setManualLoginMode(false);
+          void checkSession("manual_submit");
+        }}
+        onBackToLanding={() => {
+          setManualLoginMode(false);
+          setView("landing");
+        }}
       />
     );
   }
