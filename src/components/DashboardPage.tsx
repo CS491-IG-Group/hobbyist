@@ -652,6 +652,8 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
             )
           ) : activeNav === "orbit" ? (
             <NicheFeed />
+          ) : activeNav === "assistant" ? (
+            <ChatbotPage />
           ) : activeNav === "profile" ? (
             showAccountSettings ? (
               <AccountSettingsPage
