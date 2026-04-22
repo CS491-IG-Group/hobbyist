@@ -594,59 +594,59 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
         />
 
         <main className="flex-1 overflow-y-auto">
-        {activeNav === "timeline" ? (
-          <TimelinePage
-            joinedHubs={joinedHubs}
-            onToggleJoin={toggleJoinHub}
-          />
-        ) : activeNav === "discover" ? (
-          subPage?.type === "item" ? (
-            <ItemDetailPage
-              categoryId={subPage.categoryId}
-              hubId={subPage.hubId}
-              itemId={subPage.itemId}
-              onBack={() => setSubPage({ type: "hub", categoryId: subPage.categoryId, hubId: subPage.hubId })}
+          {activeNav === "timeline" ? (
+            <TimelinePage
+              joinedHubs={joinedHubs}
+              onToggleJoin={toggleJoinHub}
             />
-          ) : subPage?.type === "hub" ? (
-            <HubPage
-              categoryId={subPage.categoryId}
-              hubId={subPage.hubId}
-              onBack={() => setSubPage({ type: "category", categoryId: subPage.categoryId })}
-              onSelectItem={(itemId) =>
-                setSubPage({ type: "item", categoryId: subPage.categoryId, hubId: subPage.hubId, itemId })
-              }
-            />
-          ) : subPage?.type === "category" ? (
-            <CategoryPage
-              categoryId={subPage.categoryId}
-              onBack={() => setSubPage(null)}
-              onSelectHub={(hubId) =>
-                setSubPage({ type: "hub", categoryId: subPage.categoryId, hubId })
-              }
-            />
-          ) : (
-            <DiscoverPage
-              onSelectCategory={(categoryId) => setSubPage({ type: "category", categoryId })}
-            />
-          )
-        ) : activeNav === "orbit" ? (
-          <NicheFeed />
-        ) : activeNav === "profile" ? (
-          showAccountSettings ? (
-            <AccountSettingsPage
-              onBack={() => setShowAccountSettings(false)}
-              displayName=""
-              handle=""
-              email=""
-            />
-          ) : (
-            <ProfilePage onOpenSettings={() => setShowAccountSettings(true)} />
-          )
-        ) : activeNav === "notifications" ? (
-          <NotificationsPage />
-        ) : activeNav === "assistant" ? (
-          <ChatbotPage />
-        ) : null}
+          ) : activeNav === "discover" ? (
+            subPage?.type === "item" ? (
+              <ItemDetailPage
+                categoryId={subPage.categoryId}
+                hubId={subPage.hubId}
+                itemId={subPage.itemId}
+                onBack={() => setSubPage({ type: "hub", categoryId: subPage.categoryId, hubId: subPage.hubId })}
+              />
+            ) : subPage?.type === "hub" ? (
+              <HubPage
+                categoryId={subPage.categoryId}
+                hubId={subPage.hubId}
+                onBack={() => setSubPage({ type: "category", categoryId: subPage.categoryId })}
+                onSelectItem={(itemId) =>
+                  setSubPage({ type: "item", categoryId: subPage.categoryId, hubId: subPage.hubId, itemId })
+                }
+              />
+            ) : subPage?.type === "category" ? (
+              <CategoryPage
+                categoryId={subPage.categoryId}
+                onBack={() => setSubPage(null)}
+                onSelectHub={(hubId) =>
+                  setSubPage({ type: "hub", categoryId: subPage.categoryId, hubId })
+                }
+              />
+            ) : (
+              <DiscoverPage
+                onSelectCategory={(categoryId) => setSubPage({ type: "category", categoryId })}
+              />
+            )
+          ) : activeNav === "orbit" ? (
+            <NicheFeed />
+          ) : activeNav === "assistant" ? (
+            <ChatbotPage />
+          ) : activeNav === "profile" ? (
+            showAccountSettings ? (
+              <AccountSettingsPage
+                onBack={() => setShowAccountSettings(false)}
+                displayName=""
+                handle=""
+                email=""
+              />
+            ) : (
+              <ProfilePage onOpenSettings={() => setShowAccountSettings(true)} />
+            )
+          ) : activeNav === "notifications" ? (
+            <NotificationsPage />
+          ) : null}
         </main>
 
         {activeNav === "profile" && <aside className="hidden lg:flex flex-col w-72 shrink-0 sticky top-0 h-screen overflow-y-auto p-4 gap-5"
