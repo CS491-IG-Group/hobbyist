@@ -90,6 +90,8 @@ export default function Home() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [manualLoginMode, setManualLoginMode] = useState(false);
   const manualLoginModeRef = useRef(false);
+  const viewRef = useRef<View>("landing");
+  const manualAuthInProgressRef = useRef(false);
 
   useEffect(() => {
     // Product default: always start in dark mode on fresh app load.
@@ -108,9 +110,17 @@ export default function Home() {
     }
 
     if (!session) {
+      if (source === "auth_change" && manualAuthInProgressRef.current) {
+        return;
+      }
+      if (source === "auth_change" && (viewRef.current === "login" || viewRef.current === "loading")) {
+        setView("login");
+        return;
+      }
       setCurrentUserId(null);
       setOnboardingUser(null);
-      setView("landing");
+      setView(source === "manual_submit" ? "login" : "landing");
+      manualAuthInProgressRef.current = false;
       return;
     }
 
@@ -124,6 +134,7 @@ export default function Home() {
       }
       setOnboardingUser(null);
       setView("dashboard");
+      manualAuthInProgressRef.current = false;
       return;
     }
 
@@ -135,6 +146,7 @@ export default function Home() {
       setOnboardingUser(null);
       setView("dashboard");
     }
+    manualAuthInProgressRef.current = false;
   }, []);
 
   async function checkSession(source: "bootstrap" | "manual_submit" = "bootstrap") {
@@ -182,6 +194,10 @@ export default function Home() {
     manualLoginModeRef.current = manualLoginMode;
   }, [manualLoginMode]);
 
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
+
   async function handleLogout() {
     await supabase.auth.signOut();
     setCurrentUserId(null);
@@ -219,7 +235,9 @@ export default function Home() {
     return (
       <LoginPage
         onLogin={() => {
+          manualAuthInProgressRef.current = true;
           setManualLoginMode(false);
+          setView("loading");
           void checkSession("manual_submit");
         }}
         onBackToLanding={() => {

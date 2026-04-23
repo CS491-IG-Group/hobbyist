@@ -115,6 +115,7 @@ export function PostCard({ post, heightClass }: { post: any; heightClass: string
     const [commentCount, setCommentCount] = useState(0);
     const [showComments, setShowComments] = useState(false);
     const [hovered, setHovered] = useState(false);
+    const hasImage = Boolean(post.image);
 
     // ... (Your existing useEffect for stats remains the same)
     useEffect(() => {
@@ -149,10 +150,10 @@ export function PostCard({ post, heightClass }: { post: any; heightClass: string
             onMouseLeave={() => setHovered(false)}>
 
             {/* IMAGE / HEADER BLOCK */}
-            <div className={`relative ${post.image ? `${heightClass} overflow-hidden` : "min-h-[120px] px-6 pt-12 pb-5 flex items-center justify-center"}`}
-                style={{ background: !post.image ? `linear-gradient(135deg, ${post.hubColor}30, ${post.hubColor}10)` : "transparent" }}>
-                {post.image ? (
-                    <img src={post.image} alt="" className="w-full h-full object-cover transition-transform duration-500" style={{ transform: hovered ? "scale(1.05)" : "scale(1)" }} />
+            <div className={`relative ${hasImage ? `${heightClass} overflow-hidden` : "min-h-[120px] px-6 pt-12 pb-5 flex items-center justify-center"}`}
+                style={{ background: !hasImage ? `linear-gradient(135deg, ${post.hubColor}30, ${post.hubColor}10)` : "transparent" }}>
+                {hasImage ? (
+                    <img src={post.image} alt="Post attachment" className="w-full h-full object-cover transition-transform duration-500" style={{ transform: hovered ? "scale(1.05)" : "scale(1)" }} />
                 ) : (
                     <p
                         className="text-xs leading-relaxed text-center"
@@ -164,25 +165,6 @@ export function PostCard({ post, heightClass }: { post: any; heightClass: string
                     >
                         {post.text}
                     </p>
-                )}
-
-                {post.image && (
-                    <div className="absolute inset-0 flex items-center justify-center px-6 py-6">
-                        <p
-                            className="text-xs leading-relaxed text-center"
-                            style={{
-                                color: "#fff",
-                                textShadow: "0 1px 2px rgba(0,0,0,0.45)",
-                                maxWidth: "90%",
-                                display: "-webkit-box",
-                                WebkitLineClamp: 5 as any,
-                                WebkitBoxOrient: "vertical",
-                                overflow: "hidden",
-                            }}
-                        >
-                            {post.text}
-                        </p>
-                    </div>
                 )}
 
                 <div className="absolute top-2.5 left-2.5">
@@ -198,6 +180,9 @@ export function PostCard({ post, heightClass }: { post: any; heightClass: string
 
             {/* BODY CONTENT */}
             <div className="px-3 pt-3 pb-3">
+                {hasImage && (
+                    <p className="text-xs leading-relaxed mb-2.5 text-[var(--text)]">{post.text}</p>
+                )}
                 <div className="flex items-center justify-between gap-2 mt-2">
                     <div className="flex items-center gap-2">
                         <div className="w-6 h-6 rounded-lg flex items-center justify-center text-xs" style={{ background: post.avatarBg }}>{post.avatar}</div>
@@ -228,7 +213,7 @@ export function PostCard({ post, heightClass }: { post: any; heightClass: string
 
 function CreatePostModal({ onClose, onPost, hubs }: {
     onClose: () => void;
-    onPost: (text: string, hub: string, extraTags: string[]) => void;
+    onPost: (text: string, hub: string, extraTags: string[], imageFile: File | null) => void;
     hubs: HubRow[];
 }) {
     const { userId, sessionId } = useAnalytics();
@@ -236,7 +221,16 @@ function CreatePostModal({ onClose, onPost, hubs }: {
     const [selectedHub, setSelectedHub] = React.useState("");
     const [extraTags, setExtraTags] = React.useState<string[]>([]);
     const [tagInput, setTagInput] = React.useState("");
+    const [imageFile, setImageFile] = React.useState<File | null>(null);
+    const [imagePreviewUrl, setImagePreviewUrl] = React.useState<string | null>(null);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
     const maxChars = 280;
+
+    React.useEffect(() => {
+        return () => {
+            if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+        };
+    }, [imagePreviewUrl]);
 
     const addTagsFromInput = () => {
         const raw = tagInput.trim().replace(/^#+/, "");
@@ -318,6 +312,25 @@ function CreatePostModal({ onClose, onPost, hubs }: {
                             {text.length}/{maxChars}
                         </span>
                     </div>
+                    {imagePreviewUrl && (
+                        <div className="mb-4">
+                            <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border)" }}>
+                                <img src={imagePreviewUrl} alt="Selected upload preview" className="w-full h-40 object-cover" />
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+                                    setImagePreviewUrl(null);
+                                    setImageFile(null);
+                                }}
+                                className="mt-2 text-xs font-medium hover:opacity-80"
+                                style={{ color: "var(--text-muted)" }}
+                            >
+                                Remove image
+                            </button>
+                        </div>
+                    )}
                     <div className="mb-5">
                         <p className="text-xs font-semibold mb-2" style={{ color: "var(--text-muted)" }}>Post to hub</p>
                         <div className="flex flex-wrap gap-2">
@@ -393,7 +406,25 @@ function CreatePostModal({ onClose, onPost, hubs }: {
                     <div className="h-px mb-4" style={{ background: "var(--border)" }} />
                     <div className="flex items-center justify-between">
                         <div className="flex gap-3">
-                            <button style={{ color: "var(--text-muted)" }} title="Add image">
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                    const file = e.target.files?.[0] ?? null;
+                                    if (!file) return;
+                                    setImageFile(file);
+                                    if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+                                    setImagePreviewUrl(URL.createObjectURL(file));
+                                }}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => fileInputRef.current?.click()}
+                                style={{ color: "var(--text-muted)" }}
+                                title="Add image"
+                            >
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                     <rect x="3" y="3" width="18" height="18" rx="2" />
                                     <circle cx="8.5" cy="8.5" r="1.5" />
@@ -428,7 +459,7 @@ function CreatePostModal({ onClose, onPost, hubs }: {
                                             ...(slugForMeta ? { hobby_slug: slugForMeta } : {}),
                                         },
                                     });
-                                    onPost(text.trim(), selectedHub, extraTags);
+                                    onPost(text.trim(), selectedHub, extraTags, imageFile);
                                     onClose();
                                 }
                             }}
@@ -480,7 +511,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
             /* `users!user_id` — required when PostgREST sees multiple posts↔users paths (e.g. posts.user_id + post_likes). */
             const { data, error } = await supabase
                 .from("posts")
-                .select("id, body, created_at, hub_id, extra_tags, user_id, users!user_id ( handle, display_name )")
+                .select("id, body, image_url, created_at, hub_id, extra_tags, user_id, users!user_id ( handle, display_name )")
                 .order("created_at", { ascending: false });
 
             if (error) {
@@ -532,7 +563,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                     hubColor,
                     time: formatTimeAgo(post.created_at),
                     text: post.body,
-                    image: null,
+                    image: post.image_url ?? null,
                     likes: 0,
                     comments: 0,
                     reposts: 0,
@@ -570,7 +601,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
     const [postSaveError, setPostSaveError] = useState<string | null>(null);
 
     // ── Saves post to Supabase (with optional extra_tags) then reloads feed from DB ──
-    const handleNewPost = async (text: string, hub: string, extraTags: string[] = []) => {
+    const handleNewPost = async (text: string, hub: string, extraTags: string[] = [], imageFile: File | null = null) => {
         const normalizedExtras = [...new Set(extraTags.map(t => normalizeTag(t)).filter(Boolean))].slice(0, MAX_EXTRA_TAGS);
         setPostSaveError(null);
 
@@ -601,6 +632,22 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                 return;
             }
 
+            let uploadedImageUrl: string | null = null;
+            if (imageFile) {
+                const ext = imageFile.name.split(".").pop()?.toLowerCase() ?? "jpg";
+                const safeExt = ext.replace(/[^a-z0-9]/g, "") || "jpg";
+                const objectPath = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${safeExt}`;
+                const { error: uploadError } = await supabase.storage
+                    .from("post-images")
+                    .upload(objectPath, imageFile, { upsert: false });
+                if (uploadError) {
+                    setPostSaveError(`Image upload failed: ${uploadError.message}`);
+                    return;
+                }
+                const { data: publicUrlData } = supabase.storage.from("post-images").getPublicUrl(objectPath);
+                uploadedImageUrl = publicUrlData.publicUrl;
+            }
+
             const { data: inserted, error } = await supabase
                 .from("posts")
                 .insert({
@@ -609,6 +656,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                     hub_id: hubRow.id,
                     post_type: "text",
                     extra_tags: normalizedExtras.length ? normalizedExtras : [],
+                    image_url: uploadedImageUrl,
                 })
                 .select("id")
                 .single();
@@ -897,7 +945,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
             {showCompose && (
                 <CreatePostModal
                     onClose={() => setShowCompose(false)}
-                    onPost={(text, hub, tags) => void handleNewPost(text, hub, tags)}
+                    onPost={(text, hub, tags, imageFile) => void handleNewPost(text, hub, tags, imageFile)}
                     hubs={hubRows}
                 />
             )}

@@ -59,6 +59,7 @@ function ItemCard({ item, onClick }: { item: { name: string; year: string; ratin
 type HubPost = {
     id: number;
     body: string;
+    image_url: string | null;
     created_at: string;
     user_id: string;
     users?: { handle?: string | null; display_name?: string | null } | { handle?: string | null; display_name?: string | null }[] | null;
@@ -212,7 +213,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
 
             const { data, error } = await supabase
                 .from("posts")
-                .select("id, body, created_at, user_id, users!user_id ( handle, display_name )")
+                .select("id, body, image_url, created_at, user_id, users!user_id ( handle, display_name )")
                 .eq("hub_id", hubRow.id)
                 .order("created_at", { ascending: activeTab === "popular" });
 
@@ -467,7 +468,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                                             hubColor: hub.gradientFrom,
                                             time: formatTimeAgo(post.created_at),
                                             text: post.body,
-                                            image: null,
+                                            image: post.image_url ?? null,
                                             comments: 0,
                                             reposts: 0,
                                         }}

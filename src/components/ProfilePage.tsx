@@ -18,6 +18,7 @@ const BADGES = [
 type ProfilePost = {
     id: number;
     body: string;
+    image_url: string | null;
     created_at: string;
     hub_name: string;
     hub_color: string;
@@ -406,7 +407,7 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
             setPostsError(null);
             const { data: postsData, error: postsErr } = await supabase
                 .from("posts")
-                .select("id, body, created_at, hubs(name, gradient_from)")
+                .select("id, body, image_url, created_at, hubs(name, gradient_from)")
                 .eq("user_id", user.id)
                 .order("created_at", { ascending: false });
 
@@ -422,6 +423,7 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
                 return {
                     id: post.id,
                     body: post.body ?? "",
+                    image_url: post.image_url ?? null,
                     created_at: post.created_at,
                     hub_name: hub?.name ?? "Unknown",
                     hub_color: hub?.gradient_from ?? "#8b5cf6",
@@ -615,7 +617,7 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
                                     hubColor: post.hub_color,
                                     time: formatTimeAgo(post.created_at),
                                     text: post.body,
-                                    image: null,
+                                    image: post.image_url ?? null,
                                     comments: 0,
                                     reposts: 0,
                                 }}
