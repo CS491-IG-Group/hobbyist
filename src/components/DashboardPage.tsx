@@ -585,12 +585,16 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
       return;
     }
     setListsError(null);
+    // Optimistic update for instant feedback.
     setListItemsByListId(prev => {
       const next = { ...prev };
       next[listId] = (next[listId] ?? []).filter((item) => item.listItemId !== listItemId);
       return next;
     });
     setLists(prev => prev.map((l) => (l.id === listId ? { ...l, count: Math.max(0, l.count - 1) } : l)));
+    // Re-sync from backend so expanded list stays accurate without refresh.
+    await fetchListItemsForList(listId);
+    await loadLists();
   };
 
   const deleteList = async (id: string) => {

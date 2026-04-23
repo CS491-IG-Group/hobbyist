@@ -149,12 +149,40 @@ export function PostCard({ post, heightClass }: { post: any; heightClass: string
             onMouseLeave={() => setHovered(false)}>
 
             {/* IMAGE / HEADER BLOCK */}
-            <div className={`relative ${post.image ? heightClass : "h-16"} overflow-hidden`}
+            <div className={`relative ${post.image ? `${heightClass} overflow-hidden` : "min-h-[120px] px-6 pt-12 pb-5 flex items-center justify-center"}`}
                 style={{ background: !post.image ? `linear-gradient(135deg, ${post.hubColor}30, ${post.hubColor}10)` : "transparent" }}>
                 {post.image ? (
                     <img src={post.image} alt="" className="w-full h-full object-cover transition-transform duration-500" style={{ transform: hovered ? "scale(1.05)" : "scale(1)" }} />
                 ) : (
-                    <div className="w-full h-full" /> // Placeholder if needed
+                    <p
+                        className="text-xs leading-relaxed text-center"
+                        style={{
+                            color: "#fff",
+                            textShadow: "0 1px 2px rgba(0,0,0,0.45)",
+                            maxWidth: "90%",
+                        }}
+                    >
+                        {post.text}
+                    </p>
+                )}
+
+                {post.image && (
+                    <div className="absolute inset-0 flex items-center justify-center px-6 py-6">
+                        <p
+                            className="text-xs leading-relaxed text-center"
+                            style={{
+                                color: "#fff",
+                                textShadow: "0 1px 2px rgba(0,0,0,0.45)",
+                                maxWidth: "90%",
+                                display: "-webkit-box",
+                                WebkitLineClamp: 5 as any,
+                                WebkitBoxOrient: "vertical",
+                                overflow: "hidden",
+                            }}
+                        >
+                            {post.text}
+                        </p>
+                    </div>
                 )}
 
                 <div className="absolute top-2.5 left-2.5">
@@ -168,10 +196,8 @@ export function PostCard({ post, heightClass }: { post: any; heightClass: string
                 </div>
             </div>
 
-            {/* BODY CONTENT (Text always renders here) */}
+            {/* BODY CONTENT */}
             <div className="px-3 pt-3 pb-3">
-                <p className="text-xs leading-relaxed mb-2.5 text-[var(--text)]">{post.text}</p>
-
                 <div className="flex items-center justify-between gap-2 mt-2">
                     <div className="flex items-center gap-2">
                         <div className="w-6 h-6 rounded-lg flex items-center justify-center text-xs" style={{ background: post.avatarBg }}>{post.avatar}</div>
