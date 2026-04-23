@@ -493,6 +493,9 @@ export default function ItemDetailPage({
             return;
         }
         setListSaveMessage("Added to list.");
+        if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("lists-updated", { detail: { listId: selectedListId } }));
+        }
     }
 
     return (

@@ -470,6 +470,23 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
     void loadLists();
   }, [loadLists]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onListsUpdated = (event: Event) => {
+      const custom = event as CustomEvent<{ listId?: string }>;
+      void loadLists();
+      const updatedListId = custom.detail?.listId;
+      if (updatedListId) {
+        setExpandedListIds((prev) => ({ ...prev, [updatedListId]: true }));
+        void fetchListItemsForList(updatedListId);
+      }
+    };
+    window.addEventListener("lists-updated", onListsUpdated as EventListener);
+    return () => {
+      window.removeEventListener("lists-updated", onListsUpdated as EventListener);
+    };
+  }, [loadLists]);
+
   const addList = async (label: string) => {
     if (!userId) return;
     const { error } = await supabase
@@ -484,10 +501,7 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
     await loadLists();
   };
 
-  const toggleListExpanded = async (listId: string) => {
-    setExpandedListIds(prev => ({ ...prev, [listId]: !prev[listId] }));
-    if (listItemsByListId[listId]) return;
-
+  async function fetchListItemsForList(listId: string) {
     const { data, error } = await supabase
       .from("list_items")
       .select("id, title, item_id")
@@ -552,6 +566,12 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
       };
     });
     setListItemsByListId(prev => ({ ...prev, [listId]: entries }));
+  }
+
+  const toggleListExpanded = async (listId: string) => {
+    setExpandedListIds(prev => ({ ...prev, [listId]: !prev[listId] }));
+    if (listItemsByListId[listId]) return;
+    await fetchListItemsForList(listId);
   };
 
   const removeListItem = async (listId: string, listItemId: string | null) => {
