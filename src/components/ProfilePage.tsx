@@ -24,6 +24,119 @@ type ProfilePost = {
     hub_color: string;
 };
 
+type FollowPerson = {
+    id: string;
+    display_name: string;
+    handle: string;
+    isFollowing: boolean;
+};
+
+function FollowListModal({
+    title,
+    mode,
+    people,
+    loading,
+    error,
+    emptyLabel,
+    onToggleFollow,
+    onClose,
+}: {
+    title: string;
+    mode: "followers" | "following";
+    people: FollowPerson[];
+    loading: boolean;
+    error: string | null;
+    emptyLabel: string;
+    onToggleFollow: (person: FollowPerson) => Promise<void>;
+    onClose: () => void;
+}) {
+    const overlayRef = useRef<HTMLDivElement>(null);
+
+    function onOverlayClick(e: React.MouseEvent<HTMLDivElement>) {
+        if (e.target === overlayRef.current) onClose();
+    }
+
+    return (
+        <div
+            ref={overlayRef}
+            onClick={onOverlayClick}
+            className="fixed inset-0 z-50 flex items-center justify-center px-4"
+            style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
+        >
+            <div
+                className="w-full max-w-md rounded-2xl overflow-hidden"
+                style={{
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    animation: "fadeSlideIn 0.2s ease",
+                    maxHeight: "80vh",
+                }}
+            >
+                <div
+                    className="flex items-center justify-between px-5 py-4"
+                    style={{ borderBottom: "1px solid var(--border)" }}
+                >
+                    <h2 className="text-base font-bold" style={{ fontFamily: "Syne, sans-serif" }}>{title}</h2>
+                    <button
+                        onClick={onClose}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center transition-opacity hover:opacity-70"
+                        style={{ background: "var(--surface2)", color: "var(--text-muted)" }}
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <path d="M18 6 6 18M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+                <div className="p-4 space-y-2 overflow-y-auto" style={{ maxHeight: "60vh" }}>
+                    {loading ? (
+                        <p className="text-sm" style={{ color: "var(--text-muted)" }}>Loading…</p>
+                    ) : error ? (
+                        <p className="text-sm" style={{ color: "#f87171" }}>{error}</p>
+                    ) : people.length === 0 ? (
+                        <p className="text-sm" style={{ color: "var(--text-muted)" }}>{emptyLabel}</p>
+                    ) : people.map((person) => (
+                        <div
+                            key={person.id}
+                            className="rounded-xl px-3 py-2 flex items-center justify-between gap-3"
+                            style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}
+                        >
+                            <div className="min-w-0">
+                                <p className="text-sm font-semibold truncate">{person.display_name || "Unnamed user"}</p>
+                                <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
+                                    @{person.handle || "nohandle"}
+                                </p>
+                            </div>
+                            {mode === "following" ? (
+                                <button
+                                    type="button"
+                                    onClick={() => void onToggleFollow(person)}
+                                    className="text-xs px-2.5 py-1.5 rounded-lg font-semibold transition-all hover:opacity-90 shrink-0"
+                                    style={{ background: "rgba(239,68,68,0.12)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)" }}
+                                >
+                                    Unfollow
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => void onToggleFollow(person)}
+                                    className="text-xs px-2.5 py-1.5 rounded-lg font-semibold transition-all hover:opacity-90 shrink-0"
+                                    style={{
+                                        background: person.isFollowing ? "rgba(16,185,129,0.12)" : "rgba(139,92,246,0.15)",
+                                        color: person.isFollowing ? "#10b981" : "#a78bfa",
+                                        border: person.isFollowing ? "1px solid rgba(16,185,129,0.2)" : "1px solid rgba(139,92,246,0.2)",
+                                    }}
+                                >
+                                    {person.isFollowing ? "Following" : "Follow back"}
+                                </button>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ─── Field component ──────────────────────────────────────────────────────────
 function Field({
     label, icon, children, hint,
@@ -349,6 +462,12 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
     const [authoredPosts, setAuthoredPosts] = useState<ProfilePost[]>([]);
     const [postsLoading, setPostsLoading] = useState(true);
     const [postsError, setPostsError] = useState<string | null>(null);
+    const [followersCount, setFollowersCount] = useState(0);
+    const [followingCount, setFollowingCount] = useState(0);
+    const [openFollowModal, setOpenFollowModal] = useState<null | "followers" | "following">(null);
+    const [followModalLoading, setFollowModalLoading] = useState(false);
+    const [followModalError, setFollowModalError] = useState<string | null>(null);
+    const [followModalPeople, setFollowModalPeople] = useState<FollowPerson[]>([]);
     const profileDwellRef = useContentImpression({
         userId: analyticsUserId,
         sessionId,
@@ -432,6 +551,22 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
 
             setAuthoredPosts(mappedPosts);
             setPostsLoading(false);
+
+            const [{ count: followerRowsCount }, { count: followingRowsCount }] = await Promise.all([
+                supabase
+                    .from("user_follows")
+                    .select("*", { count: "exact", head: true })
+                    .eq("followed_id", user.id)
+                    .eq("status", "following"),
+                supabase
+                    .from("user_follows")
+                    .select("*", { count: "exact", head: true })
+                    .eq("follower_id", user.id)
+                    .eq("status", "following"),
+            ]);
+
+            setFollowersCount(followerRowsCount ?? 0);
+            setFollowingCount(followingRowsCount ?? 0);
         }
         load();
     }, []);
@@ -458,6 +593,131 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
 
     function onProfileSaved(updated: ProfileData) {
         setProfile(updated);
+    }
+
+    async function openFollowList(type: "followers" | "following") {
+        if (!userId) return;
+        setOpenFollowModal(type);
+        setFollowModalLoading(true);
+        setFollowModalError(null);
+        setFollowModalPeople([]);
+
+        const sourceColumn = type === "followers" ? "followed_id" : "follower_id";
+        const targetColumn = type === "followers" ? "follower_id" : "followed_id";
+
+        const { data: followRows, error: followErr } = await supabase
+            .from("user_follows")
+            .select(targetColumn)
+            .eq(sourceColumn, userId)
+            .eq("status", "following");
+
+        if (followErr) {
+            setFollowModalError(followErr.message);
+            setFollowModalLoading(false);
+            return;
+        }
+
+        const targetIds = (followRows ?? [])
+            .map((row: any) => row[targetColumn] as string)
+            .filter(Boolean);
+
+        if (targetIds.length === 0) {
+            setFollowModalPeople([]);
+            setFollowModalLoading(false);
+            return;
+        }
+
+        const { data: usersData, error: usersErr } = await supabase
+            .from("users")
+            .select("id, display_name, handle")
+            .in("id", targetIds);
+
+        if (usersErr) {
+            setFollowModalError(usersErr.message);
+            setFollowModalLoading(false);
+            return;
+        }
+
+        const { data: myFollowingRows, error: myFollowingErr } = await supabase
+            .from("user_follows")
+            .select("followed_id")
+            .eq("follower_id", userId)
+            .eq("status", "following")
+            .in("followed_id", targetIds);
+
+        if (myFollowingErr) {
+            setFollowModalError(myFollowingErr.message);
+            setFollowModalLoading(false);
+            return;
+        }
+
+        const myFollowingSet = new Set(
+            (myFollowingRows ?? []).map((row: any) => row.followed_id as string).filter(Boolean)
+        );
+
+        const peopleById = new Map(
+            (usersData ?? []).map((user: any) => [
+                user.id,
+                {
+                    id: user.id as string,
+                    display_name: (user.display_name ?? "") as string,
+                    handle: (user.handle ?? "") as string,
+                    isFollowing: myFollowingSet.has(user.id as string),
+                },
+            ])
+        );
+
+        const orderedPeople = targetIds
+            .map((id) => peopleById.get(id))
+            .filter((person): person is FollowPerson => Boolean(person));
+
+        setFollowModalPeople(orderedPeople);
+        setFollowModalLoading(false);
+    }
+
+    async function toggleFollowFromModal(person: FollowPerson) {
+        if (!userId || person.id === userId) return;
+
+        if (person.isFollowing) {
+            const { error } = await supabase
+                .from("user_follows")
+                .delete()
+                .eq("follower_id", userId)
+                .eq("followed_id", person.id);
+            if (error) {
+                setFollowModalError(error.message);
+                return;
+            }
+        } else {
+            const { error } = await supabase
+                .from("user_follows")
+                .upsert(
+                    { follower_id: userId, followed_id: person.id, status: "following" },
+                    { onConflict: "follower_id,followed_id" }
+                );
+            if (error) {
+                setFollowModalError(error.message);
+                return;
+            }
+        }
+
+        setFollowModalError(null);
+        await openFollowList(openFollowModal ?? "followers");
+
+        const [{ count: followerRowsCount }, { count: followingRowsCount }] = await Promise.all([
+            supabase
+                .from("user_follows")
+                .select("*", { count: "exact", head: true })
+                .eq("followed_id", userId)
+                .eq("status", "following"),
+            supabase
+                .from("user_follows")
+                .select("*", { count: "exact", head: true })
+                .eq("follower_id", userId)
+                .eq("status", "following"),
+        ]);
+        setFollowersCount(followerRowsCount ?? 0);
+        setFollowingCount(followingRowsCount ?? 0);
     }
 
     return (
@@ -510,23 +770,43 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
 
                         {/* Stats */}
                         <div className="hidden sm:flex items-center gap-5 shrink-0">
-                            {[{ label: "Hubs", value: "15" }, { label: "Posts", value: String(authoredPosts.length) }, { label: "Friends", value: "142" }].map(stat => (
-                                <div key={stat.label} className="text-center">
-                                    <p className="text-base font-bold">{stat.value}</p>
-                                    <p className="text-xs" style={{ color: "var(--text-muted)" }}>{stat.label}</p>
-                                </div>
-                            ))}
+                            <div className="text-center">
+                                <p className="text-base font-bold">{userHubs.length}</p>
+                                <p className="text-xs" style={{ color: "var(--text-muted)" }}>Hubs</p>
+                            </div>
+                            <div className="text-center">
+                                <p className="text-base font-bold">{authoredPosts.length}</p>
+                                <p className="text-xs" style={{ color: "var(--text-muted)" }}>Posts</p>
+                            </div>
+                            <button className="text-center hover:opacity-80" onClick={() => void openFollowList("followers")}>
+                                <p className="text-base font-bold">{followersCount}</p>
+                                <p className="text-xs" style={{ color: "var(--text-muted)" }}>Followers</p>
+                            </button>
+                            <button className="text-center hover:opacity-80" onClick={() => void openFollowList("following")}>
+                                <p className="text-base font-bold">{followingCount}</p>
+                                <p className="text-xs" style={{ color: "var(--text-muted)" }}>Following</p>
+                            </button>
                         </div>
                     </div>
 
                     {/* Mobile stats */}
                     <div className="flex sm:hidden items-center justify-around w-full mt-3 px-2">
-                        {[{ label: "Hubs", value: "15" }, { label: "Posts", value: String(authoredPosts.length) }, { label: "Friends", value: "142" }].map(stat => (
-                            <div key={stat.label} className="text-center">
-                                <p className="text-base font-bold">{stat.value}</p>
-                                <p className="text-xs" style={{ color: "var(--text-muted)" }}>{stat.label}</p>
-                            </div>
-                        ))}
+                        <div className="text-center">
+                            <p className="text-base font-bold">{userHubs.length}</p>
+                            <p className="text-xs" style={{ color: "var(--text-muted)" }}>Hubs</p>
+                        </div>
+                        <div className="text-center">
+                            <p className="text-base font-bold">{authoredPosts.length}</p>
+                            <p className="text-xs" style={{ color: "var(--text-muted)" }}>Posts</p>
+                        </div>
+                        <button className="text-center hover:opacity-80" onClick={() => void openFollowList("followers")}>
+                            <p className="text-base font-bold">{followersCount}</p>
+                            <p className="text-xs" style={{ color: "var(--text-muted)" }}>Followers</p>
+                        </button>
+                        <button className="text-center hover:opacity-80" onClick={() => void openFollowList("following")}>
+                            <p className="text-base font-bold">{followingCount}</p>
+                            <p className="text-xs" style={{ color: "var(--text-muted)" }}>Following</p>
+                        </button>
                     </div>
 
                     {/* Action buttons */}
@@ -688,6 +968,18 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
                     initial={profile}
                     onClose={() => setShowEditModal(false)}
                     onSaved={(updated) => { onProfileSaved(updated); setShowEditModal(false); }}
+                />
+            )}
+            {openFollowModal && (
+                <FollowListModal
+                    title={openFollowModal === "followers" ? "Followers" : "Following"}
+                    mode={openFollowModal}
+                    people={followModalPeople}
+                    loading={followModalLoading}
+                    error={followModalError}
+                    emptyLabel={openFollowModal === "followers" ? "No followers yet." : "Not following anyone yet."}
+                    onToggleFollow={toggleFollowFromModal}
+                    onClose={() => setOpenFollowModal(null)}
                 />
             )}
         </div>

@@ -11,6 +11,7 @@ import { hubNameToHobbySlug } from "../lib/hubHobbyMap";
 import { mergePostTags, normalizeTag } from "../lib/hubTags";
 
 interface TimelinePost extends RankableTimelinePost {
+    authorId: string;
     hubId: string | null;
     avatar: string;
     avatarBg: string;
@@ -113,6 +114,8 @@ export function PostCard({ post, heightClass }: { post: any; heightClass: string
     const [isLiked, setIsLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(0);
     const [commentCount, setCommentCount] = useState(0);
+    const [isFollowingAuthor, setIsFollowingAuthor] = useState(false);
+    const [followBusy, setFollowBusy] = useState(false);
     const [showComments, setShowComments] = useState(false);
     const [hovered, setHovered] = useState(false);
     const hasImage = Boolean(post.image);
@@ -130,6 +133,34 @@ export function PostCard({ post, heightClass }: { post: any; heightClass: string
         fetchStats();
     }, [post.id, userId]);
 
+    useEffect(() => {
+        const fetchFollowState = async () => {
+            if (!userId || !post.authorId || post.authorId === userId) {
+                setIsFollowingAuthor(false);
+                return;
+            }
+
+            const { data, error } = await supabase
+                .from("user_follows")
+                .select("follower_id")
+                .eq("follower_id", userId)
+                .eq("followed_id", post.authorId)
+                .eq("status", "following")
+                .maybeSingle();
+
+            if (error) {
+                if (process.env.NODE_ENV === "development") {
+                    console.warn("[timeline] follow state lookup failed", error.message);
+                }
+                return;
+            }
+
+            setIsFollowingAuthor(Boolean(data));
+        };
+
+        void fetchFollowState();
+    }, [post.authorId, userId]);
+
     // ... (Your existing handleLike remains the same)
     const handleLike = async (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -141,6 +172,54 @@ export function PostCard({ post, heightClass }: { post: any; heightClass: string
         } else {
             await supabase.from('post_likes').insert({ post_id: post.id, user_id: userId });
         }
+    };
+
+    const handleFollowToggle = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!userId || !post.authorId || post.authorId === userId || followBusy) return;
+
+        const nextFollowing = !isFollowingAuthor;
+        setFollowBusy(true);
+        setIsFollowingAuthor(nextFollowing);
+
+        if (nextFollowing) {
+            const { error } = await supabase
+                .from("user_follows")
+                .upsert(
+                    { follower_id: userId, followed_id: post.authorId, status: "following" },
+                    { onConflict: "follower_id,followed_id" }
+                );
+            if (error) {
+                setIsFollowingAuthor(false);
+                setFollowBusy(false);
+                return;
+            }
+
+            void logContentEvent({
+                userId,
+                sessionId,
+                eventType: "follow",
+                uiLocation: "timeline",
+                metadata: postAnalyticsMeta(post, {
+                    action: "follow_from_post_card",
+                    target_author_id: post.authorId,
+                    target_handle: post.handle,
+                }),
+            });
+        } else {
+            const { error } = await supabase
+                .from("user_follows")
+                .delete()
+                .eq("follower_id", userId)
+                .eq("followed_id", post.authorId);
+            if (error) {
+                setIsFollowingAuthor(true);
+                setFollowBusy(false);
+                return;
+            }
+        }
+
+        setFollowBusy(false);
     };
 
     return (
@@ -190,6 +269,21 @@ export function PostCard({ post, heightClass }: { post: any; heightClass: string
                     </div>
 
                     <div className="flex items-center gap-3">
+                        {userId && post.authorId && post.authorId !== userId && (
+                            <button
+                                type="button"
+                                onClick={handleFollowToggle}
+                                disabled={followBusy}
+                                className="text-[10px] px-2 py-1 rounded-md font-semibold transition-all hover:opacity-90 disabled:opacity-60"
+                                style={{
+                                    background: isFollowingAuthor ? "rgba(16,185,129,0.12)" : "rgba(139,92,246,0.15)",
+                                    color: isFollowingAuthor ? "#10b981" : "#a78bfa",
+                                    border: isFollowingAuthor ? "1px solid rgba(16,185,129,0.2)" : "1px solid rgba(139,92,246,0.2)",
+                                }}
+                            >
+                                {followBusy ? "..." : isFollowingAuthor ? "Following" : "Follow"}
+                            </button>
+                        )}
                         <button onClick={handleLike} className="flex items-center gap-1 text-[10px]" style={{ color: isLiked ? "#ec4899" : "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
                             <HeartIcon filled={isLiked} /> {likeCount}
                         </button>
@@ -546,6 +640,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
 
                 return {
                     id: post.id,
+                    authorId: uid,
                     user: displayUser,
                     handle: authorHandle,
                     avatar: "✨",

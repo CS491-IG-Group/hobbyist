@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useRef, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { joinHub } from "@/lib/hubDb";
 import OrbitLogo from "./OrbitLogo";
 
 interface Props {
@@ -9,7 +10,23 @@ interface Props {
   onComplete: () => void;
 }
 
-const STEP_COUNT = 2;
+const STEP_COUNT = 3;
+
+interface HobbyRow {
+  id: number;
+  name: string;
+  slug: string;
+}
+
+interface HubSuggestionRow {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  member_count: number | null;
+  hobby_id: number | null;
+}
 
 export default function OnboardingModal({ userId, email, onComplete }: Props) {
   const [step, setStep] = useState(1);
@@ -19,12 +36,109 @@ export default function OnboardingModal({ userId, email, onComplete }: Props) {
   const [handleStatus, setHandleStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hobbiesLoading, setHobbiesLoading] = useState(false);
+  const [hobbies, setHobbies] = useState<HobbyRow[]>([]);
+  const [hobbySearch, setHobbySearch] = useState("");
+  const [selectedHobbyIds, setSelectedHobbyIds] = useState<number[]>([]);
+  const [hubSuggestionsLoading, setHubSuggestionsLoading] = useState(false);
+  const [hubSuggestions, setHubSuggestions] = useState<HubSuggestionRow[]>([]);
+  const [selectedHubSlugs, setSelectedHubSlugs] = useState<string[]>([]);
   const nameRef = useRef<HTMLInputElement>(null);
   const handleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (step === 1) nameRef.current?.focus();
   }, [step]);
+
+  useEffect(() => {
+    return () => {
+      if (handleTimer.current) clearTimeout(handleTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadHobbies() {
+      setHobbiesLoading(true);
+      try {
+        const { data, error: loadError } = await supabase
+          .from("hobbies")
+          .select("id,name,slug")
+          .order("name", { ascending: true });
+
+        if (cancelled) return;
+        if (loadError) {
+          setError(loadError.message);
+          setHobbies([]);
+          return;
+        }
+        setHobbies((data ?? []) as HobbyRow[]);
+      } finally {
+        if (!cancelled) setHobbiesLoading(false);
+      }
+    }
+
+    void loadHobbies();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadHubSuggestions() {
+      if (selectedHobbyIds.length === 0) {
+        setHubSuggestions([]);
+        return;
+      }
+
+      setHubSuggestionsLoading(true);
+      const { data, error: loadError } = await supabase
+        .from("hubs")
+        .select("id,slug,name,description,icon,member_count,hobby_id")
+        .in("hobby_id", selectedHobbyIds)
+        .order("member_count", { ascending: false })
+        .limit(12);
+
+      if (cancelled) return;
+      if (loadError) {
+        setError(loadError.message);
+        setHubSuggestions([]);
+      } else {
+        setHubSuggestions((data ?? []) as HubSuggestionRow[]);
+      }
+      setHubSuggestionsLoading(false);
+    }
+
+    void loadHubSuggestions();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedHobbyIds]);
+
+  const filteredHobbies = hobbies.filter((h) => {
+    const q = hobbySearch.trim().toLowerCase();
+    if (!q) return true;
+    return h.name.toLowerCase().includes(q) || h.slug.toLowerCase().includes(q);
+  });
+
+  function toggleHobby(id: number) {
+    setError(null);
+    setSelectedHobbyIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      return [...prev, id];
+    });
+  }
+
+  function toggleHub(slug: string) {
+    setError(null);
+    setSelectedHubSlugs((prev) => {
+      if (prev.includes(slug)) return prev.filter((x) => x !== slug);
+      return [...prev, slug];
+    });
+  }
 
   function onHandleChange(val: string) {
     setHandle(val);
@@ -49,6 +163,7 @@ export default function OnboardingModal({ userId, email, onComplete }: Props) {
 
   async function handleFinish() {
     if (!displayName.trim()) { setError("Please enter a display name."); return; }
+    if (selectedHobbyIds.length === 0) { setError("Pick at least one interest."); return; }
     if (handle && !/^[a-zA-Z0-9_]{3,50}$/.test(handle)) {
       setError("Handle must be 3–50 characters: letters, numbers, or underscores.");
       return;
@@ -69,6 +184,29 @@ export default function OnboardingModal({ userId, email, onComplete }: Props) {
         .eq("id", userId);
 
       if (dbErr) { setError(dbErr.message); return; }
+
+      const { error: clearHobbiesErr } = await supabase
+        .from("user_hobbies")
+        .delete()
+        .eq("user_id", userId);
+
+      if (clearHobbiesErr) { setError(clearHobbiesErr.message); return; }
+
+      const rows = selectedHobbyIds.map((hobbyId) => ({ user_id: userId, hobby_id: hobbyId }));
+      const { error: insertHobbiesErr } = await supabase
+        .from("user_hobbies")
+        .insert(rows);
+      if (insertHobbiesErr) { setError(insertHobbiesErr.message); return; }
+
+      if (selectedHubSlugs.length > 0) {
+        const joinResults = await Promise.all(selectedHubSlugs.map((slug) => joinHub(userId, slug)));
+        const firstJoinError = joinResults.find((r) => r.error && r.error !== "Already a member");
+        if (firstJoinError?.error) {
+          setError(firstJoinError.error);
+          return;
+        }
+      }
+
       onComplete();
     } finally {
       setSaving(false);
@@ -130,12 +268,18 @@ export default function OnboardingModal({ userId, email, onComplete }: Props) {
             className="text-xl font-bold mt-3 mb-1"
             style={{ fontFamily: "Syne, sans-serif", color: "#a78bfa" }}
           >
-            {step === 1 ? "Welcome to orbit.r" : "Tell your orbit about you"}
+            {step === 1
+              ? "Welcome to orbit.r"
+              : step === 2
+                ? "What are you into?"
+                : "Pick starter hubs"}
           </h1>
           <p className="text-xs text-center" style={{ color: "var(--text-muted)" }}>
             {step === 1
               ? `Signed in as ${email} · Step ${step} of ${STEP_COUNT}`
-              : `Step ${step} of ${STEP_COUNT} · You can always edit this later`}
+              : step === 2
+                ? `Step ${step} of ${STEP_COUNT} · This powers your feed recommendations`
+                : `Step ${step} of ${STEP_COUNT} · Join a few hubs to jump-start your orbit`}
           </p>
         </div>
 
@@ -231,10 +375,88 @@ export default function OnboardingModal({ userId, email, onComplete }: Props) {
           </div>
         )}
 
-        {/* Step 2 — Bio */}
+        {/* Step 2 — Interests */}
         {step === 2 && (
           <div className="px-8 pb-8 space-y-4">
-            {/* Preview card */}
+            <div
+              className="rounded-2xl p-4"
+              style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}
+            >
+              <p className="text-xs font-semibold mb-2" style={{ color: "var(--text-dim)" }}>
+                Choose your interests ({selectedHobbyIds.length} selected)
+              </p>
+              <input
+                type="text"
+                placeholder="Search interests..."
+                value={hobbySearch}
+                onChange={(e) => setHobbySearch(e.target.value)}
+                className="w-full bg-transparent outline-none text-sm rounded-xl px-3 py-2 mb-3"
+                style={{ color: "var(--text)", border: "1px solid var(--border)" }}
+              />
+              <div className="max-h-56 overflow-y-auto flex flex-wrap gap-2">
+                {hobbiesLoading && (
+                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                    Loading interests...
+                  </p>
+                )}
+                {!hobbiesLoading && filteredHobbies.length === 0 && (
+                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                    No matching interests.
+                  </p>
+                )}
+                {filteredHobbies.map((hobby) => {
+                  const selected = selectedHobbyIds.includes(hobby.id);
+                  return (
+                    <button
+                      key={hobby.id}
+                      type="button"
+                      onClick={() => toggleHobby(hobby.id)}
+                      className="text-xs px-3 py-1.5 rounded-full border transition-all"
+                      style={{
+                        borderColor: selected ? "#a78bfa" : "var(--border)",
+                        background: selected ? "rgba(167,139,250,0.15)" : "var(--surface)",
+                        color: selected ? "#c4b5fd" : "var(--text-dim)",
+                      }}
+                    >
+                      {hobby.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {error && <p className="text-xs" style={{ color: "#f87171" }}>{error}</p>}
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => { setStep(1); setError(null); }}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-70"
+                style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
+              >
+                ← Back
+              </button>
+              <button
+                onClick={() => {
+                  if (selectedHobbyIds.length === 0) {
+                    setError("Pick at least one interest.");
+                    return;
+                  }
+                  setError(null);
+                  setStep(3);
+                }}
+                disabled={saving || selectedHobbyIds.length === 0}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: "var(--gradient-btn)" }}
+              >
+                Continue →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3 — Bio + Suggested hubs */}
+        {step === 3 && (
+          <div className="px-8 pb-8 space-y-4">
             <div
               className="rounded-2xl p-4 flex items-center gap-4"
               style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}
@@ -253,12 +475,11 @@ export default function OnboardingModal({ userId, email, onComplete }: Props) {
                   <p className="text-xs" style={{ color: "#a78bfa" }}>@{handle}</p>
                 )}
                 <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-                  {bio.trim() || "No bio yet…"}
+                  Add a quick bio and choose starter hubs.
                 </p>
               </div>
             </div>
 
-            {/* Bio textarea */}
             <div>
               <label className="block text-xs font-semibold mb-1.5" style={{ color: "var(--text-dim)" }}>
                 Bio <span style={{ color: "var(--text-muted)" }}>(optional)</span>
@@ -268,13 +489,12 @@ export default function OnboardingModal({ userId, email, onComplete }: Props) {
                 style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}
               >
                 <textarea
-                  placeholder="Tell your orbit a bit about yourself…"
+                  placeholder="Tell your orbit a bit about yourself..."
                   value={bio}
                   onChange={e => setBio(e.target.value.slice(0, 300))}
-                  rows={4}
+                  rows={3}
                   className="w-full bg-transparent outline-none text-sm resize-none leading-relaxed"
                   style={{ color: "var(--text)", caretColor: "#a78bfa" }}
-                  autoFocus
                 />
               </div>
               <p className="text-xs mt-1 text-right" style={{ color: "var(--text-muted)" }}>
@@ -282,11 +502,61 @@ export default function OnboardingModal({ userId, email, onComplete }: Props) {
               </p>
             </div>
 
+            <div
+              className="rounded-2xl p-4"
+              style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}
+            >
+              <p className="text-xs font-semibold mb-2" style={{ color: "var(--text-dim)" }}>
+                Suggested starter hubs ({selectedHubSlugs.length} selected)
+              </p>
+              <div className="max-h-44 overflow-y-auto space-y-2">
+                {hubSuggestionsLoading && (
+                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                    Loading suggested hubs...
+                  </p>
+                )}
+                {!hubSuggestionsLoading && hubSuggestions.length === 0 && (
+                  <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                    No hub suggestions yet for selected interests.
+                  </p>
+                )}
+                {hubSuggestions.map((hub) => {
+                  const selected = selectedHubSlugs.includes(hub.slug);
+                  return (
+                    <button
+                      key={hub.id}
+                      type="button"
+                      onClick={() => toggleHub(hub.slug)}
+                      className="w-full text-left rounded-xl px-3 py-2 border transition-all"
+                      style={{
+                        borderColor: selected ? "#a78bfa" : "var(--border)",
+                        background: selected ? "rgba(167,139,250,0.12)" : "var(--surface)",
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold truncate" style={{ color: "var(--text)" }}>
+                            {hub.icon ? `${hub.icon} ` : ""}{hub.name}
+                          </p>
+                          <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
+                            {hub.description?.trim() || "Join this niche hub"}
+                          </p>
+                        </div>
+                        <span className="text-xs shrink-0" style={{ color: selected ? "#c4b5fd" : "var(--text-muted)" }}>
+                          {selected ? "Selected" : "Select"}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {error && <p className="text-xs" style={{ color: "#f87171" }}>{error}</p>}
 
             <div className="flex gap-3 pt-2">
               <button
-                onClick={() => { setStep(1); setError(null); }}
+                onClick={() => { setStep(2); setError(null); }}
                 className="flex-1 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-70"
                 style={{ background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
               >
@@ -298,7 +568,7 @@ export default function OnboardingModal({ userId, email, onComplete }: Props) {
                 className="flex-1 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ background: "var(--gradient-btn)" }}
               >
-                {saving ? "Saving…" : "Enter your orbit ✦"}
+                {saving ? "Saving..." : "Enter your orbit ✦"}
               </button>
             </div>
           </div>
