@@ -184,12 +184,18 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
     }, [userId, hubId]);
 
     const handleToggleJoin = async () => {
+        if (!userId) return;
         if (isJoined) {
             const { error } = await leaveHub(userId, hubId);
             if (error) throw new Error(error);
+            setIsJoined(false);
         } else {
             const { error } = await joinHub(userId, hubId);
             if (error) throw new Error(error);
+            setIsJoined(true);
+        }
+        if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("hub-memberships-updated"));
         }
     };
 
