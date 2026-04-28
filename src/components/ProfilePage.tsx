@@ -607,20 +607,25 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
                                 heightClass="h-48"
                                 post={{
                                     id: post.id,
+                                    ownerId: userId ?? "",
                                     user: profile.display_name || "You",
                                     handle: profile.handle ? `@${profile.handle.replace(/^@/, "")}` : "@you",
                                     avatar: "🎮",
                                     avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
                                     hub: post.hub_name,
                                     hubId: null,
+                                    hobbySlug: null,
+                                    tags: [],
                                     userTags: [],
                                     hubColor: post.hub_color,
                                     time: formatTimeAgo(post.created_at),
                                     text: post.body,
                                     image: post.image_url ?? null,
+                                    likes: 0,
                                     comments: 0,
                                     reposts: 0,
                                 }}
+                                onDelete={() => {}}
                             />
                         ))}
                     </div>
