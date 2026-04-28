@@ -11,7 +11,8 @@ import { hubNameToHobbySlug } from "../lib/hubHobbyMap";
 import { mergePostTags, normalizeTag } from "../lib/hubTags";
 
 interface TimelinePost extends RankableTimelinePost {
-    hubId: string | null;
+    ownerId: string;
+    hubId: string | null
     avatar: string;
     avatarBg: string;
     userTags: string[];
@@ -108,8 +109,26 @@ function CommentIcon() {
 
 const HEIGHT_CLASSES = ["h-48", "h-56", "h-64", "h-72", "h-52", "h-60"];
 
-export function PostCard({ post, heightClass }: { post: any; heightClass: string }) {
+export function PostCard({
+    post,
+    heightClass,
+    onDelete,
+}: {
+    post: TimelinePost;
+    heightClass: string;
+    onDelete: (postId: number) => void;
+}) {
     const { userId, sessionId } = useAnalytics();
+    const canDelete = userId && post.ownerId === userId;
+
+    const handleDelete = (e: React.MouseEvent) => {
+        e.stopPropagation();
+
+        const confirmed = window.confirm("Delete this post?");
+        if (!confirmed) return;
+
+        onDelete(post.id);
+    };
     const [isLiked, setIsLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(0);
     const [commentCount, setCommentCount] = useState(0);
@@ -172,7 +191,19 @@ export function PostCard({ post, heightClass }: { post: any; heightClass: string
                 </div>
 
                 <div className="absolute top-2.5 right-2.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                    <button onClick={handleLike} className="w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md" style={{ background: isLiked ? "#ec489980" : "rgba(0,0,0,0.45)" }}>
+                    {canDelete && (
+                        <button
+                            onClick={handleDelete}
+                            className="w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md text-white text-lg font-bold"
+                            style={{ background: "rgba(239,68,68,0.75)" }}
+                            title="Delete post">
+                            ×
+                        </button>
+                    )}
+                    <button
+                        onClick={handleLike}
+                        className="w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md"
+                        style={{ background: isLiked ? "#ec489980" : "rgba(0,0,0,0.45)" }}>
                         <HeartIcon filled={isLiked} />
                     </button>
                 </div>
@@ -546,6 +577,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
 
                 return {
                     id: post.id,
+                    ownerId: uid,
                     user: displayUser,
                     handle: authorHandle,
                     avatar: "✨",
@@ -674,6 +706,24 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
             console.error("[handleNewPost] Unexpected error:", err);
             setPostSaveError(err instanceof Error ? err.message : "Could not save post.");
         }
+    };
+
+    const handleDeletePost = async (postId: number) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { error } = await supabase
+            .from("posts")
+            .delete()
+            .eq("id", postId)
+            .eq("user_id", user.id);
+
+        if (error) {
+            console.error("Delete failed:", error.message);
+            return;
+        }
+
+        setPosts(prev => prev.filter(post => post.id !== postId));
     };
 
     const filterHubPills = useMemo(() => ["All", ...hubRows.map(h => h.name)], [hubRows]);
@@ -835,6 +885,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
                                 key={post.id}
                                 post={post}
                                 heightClass={HEIGHT_CLASSES[i % HEIGHT_CLASSES.length]}
+                                onDelete={handleDeletePost}
                             />
                         ))}
                     </div>
