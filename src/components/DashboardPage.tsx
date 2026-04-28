@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import Sidebar from "./Sidebar";
 import { supabase } from "../lib/supabase";
 import { AnalyticsProvider, logContentEvent } from "../lib/AnalyticsContext";
-import { joinHub, leaveHub, fetchUserHubSlugs, HubRow } from "../lib/hubDb";
+import { joinHub, leaveHub, fetchUserHubSlugs, fetchUserJoinedHubs, type UserJoinedHub } from "../lib/hubDb";
 
 
 const MainPaneLoading = () => (
@@ -215,19 +215,32 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
   }
 
   // Joined hubs — shared with TimelinePage
-  const [joinedHubs, setJoinedHubs] = useState([]);
+  const [joinedHubs, setJoinedHubs] = useState<string[]>([]);
+  const [joinedHubDetails, setJoinedHubDetails] = useState<UserJoinedHub[]>([]);
 
   useEffect(() => {
     if (!userId) return;
     const loadJoinedHubs = async () => {
       try {
-        const hubs = await fetchUserHubSlugs(userId);
+        const [hubs, hubDetails] = await Promise.all([
+          fetchUserHubSlugs(userId),
+          fetchUserJoinedHubs(userId),
+        ]);
         setJoinedHubs(hubs);
+        setJoinedHubDetails(hubDetails);
       } catch (error) {
         console.error("Error loading joined hubs:", error);
       }
     };
     loadJoinedHubs();
+
+    const onMembershipUpdated = () => {
+      void loadJoinedHubs();
+    };
+    window.addEventListener("hub-memberships-updated", onMembershipUpdated as EventListener);
+    return () => {
+      window.removeEventListener("hub-memberships-updated", onMembershipUpdated as EventListener);
+    };
   }, [userId]);
 
 
@@ -241,8 +254,15 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
         await joinHub(userId, hubSlug);
       }
       // Refresh the list
-      const updatedHubs = await fetchUserHubSlugs(userId);
+      const [updatedHubs, updatedHubDetails] = await Promise.all([
+        fetchUserHubSlugs(userId),
+        fetchUserJoinedHubs(userId),
+      ]);
       setJoinedHubs(updatedHubs);
+      setJoinedHubDetails(updatedHubDetails);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("hub-memberships-updated"));
+      }
     } catch (error) {
       console.error("Error toggling hub join:", error);
     }
@@ -632,6 +652,7 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
           setActiveNav={handleNav}
           onLogout={onLogout}
           unreadCount={unreadCount}
+          joinedHubs={joinedHubDetails}
           onSelectHub={(categoryId, hubId) => {
             setActiveNav("discover");
             setSubPage({ type: "hub", categoryId, hubId });

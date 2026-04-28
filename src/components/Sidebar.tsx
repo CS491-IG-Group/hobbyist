@@ -22,6 +22,7 @@ interface SidebarProps {
   onLogout: () => void;
   onSelectHub?: (categoryId: string, hubId: string) => void;
   unreadCount?: number;
+  joinedHubs?: JoinedHub[];
 }
 
 function HomeIcon() {
@@ -112,12 +113,14 @@ function MoonIcon() {
   );
 }
 
-const joinedHubs: JoinedHub[] = [
-  { categoryId: "gaming", hubId: "resident-evil", name: "Resident Evil", emoji: "🧟", color: "#6b0f1a" },
-  { categoryId: "music", hubId: "bad-bunny", name: "Bad Bunny", emoji: "🐰", color: "#10b981" },
-];
-
-export default function Sidebar({ activeNav, setActiveNav, onLogout, onSelectHub, unreadCount = 0 }: SidebarProps) {
+export default function Sidebar({
+  activeNav,
+  setActiveNav,
+  onLogout,
+  onSelectHub,
+  unreadCount = 0,
+  joinedHubs = [],
+}: SidebarProps) {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
 
   useEffect(() => {
@@ -156,7 +159,7 @@ export default function Sidebar({ activeNav, setActiveNav, onLogout, onSelectHub
       </div>
 
       {/* Nav */}
-      <nav className="flex flex-col items-center gap-1 px-2 flex-1">
+      <nav className="flex flex-col items-center gap-1 px-2 flex-1 min-h-0">
         {navItems.map(item => (
           <button
             key={item.id}
@@ -184,7 +187,7 @@ export default function Sidebar({ activeNav, setActiveNav, onLogout, onSelectHub
         </div>
 
         {/* Joined Hubs */}
-        <div className="flex flex-col items-center gap-1 w-full">
+        <div className="flex flex-col items-center gap-1 w-full flex-1 min-h-0 overflow-y-auto pb-2">
           {joinedHubs.map(hub => (
             <button
               key={hub.hubId}
