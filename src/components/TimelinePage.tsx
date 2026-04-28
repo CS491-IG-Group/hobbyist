@@ -7,6 +7,7 @@ import { useContentImpression } from "../lib/useContentImpression";
 import { fetchRecommendationContext, rankTimelinePosts, type UserAffinity, type RankableTimelinePost } from "../lib/recommendations";
 import { supabase } from "../lib/supabase";
 import { fetchAllHubs, type HubRow } from "../lib/hubDb";
+import { fetchUserHubSlugs, } from "../lib/hubDb";
 import { hubNameToHobbySlug } from "../lib/hubHobbyMap";
 import { mergePostTags, normalizeTag } from "../lib/hubTags";
 
@@ -475,12 +476,9 @@ function CreatePostModal({ onClose, onPost, hubs }: {
     );
 }
 
-interface TimelinePageProps {
-    joinedHubs: string[];
-    onToggleJoin: (hubName: string) => void;
-}
 
-export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageProps) {
+
+export default function TimelinePage() {
     const formatTimeAgo = (dateString: string) => {
         const now = new Date();
         const then = new Date(dateString);
@@ -497,6 +495,145 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
     };
 
     const [postsFetchError, setPostsFetchError] = useState<string | null>(null);
+
+
+
+    const { userId, sessionId } = useAnalytics();
+    const timelineDwellRef = useContentImpression({
+        userId,
+        sessionId,
+        uiLocation: "timeline",
+        metadata: { kind: "timeline_feed_screen_dwell" },
+    });
+    const [activeFilter, setActiveFilter] = useState("My Hubs");
+    const [showCompose, setShowCompose] = useState(false);
+    const [posts, setPosts] = useState<TimelinePost[]>([]);
+    const [hubRows, setHubRows] = useState<HubRow[]>([]);
+    const [loadingPosts, setLoadingPosts] = useState(true);
+    const [affinity, setAffinity] = useState<UserAffinity | null>(null);
+    const [profileHobbySlugs, setProfileHobbySlugs] = useState<string[]>([]);
+    const [affinityReady, setAffinityReady] = useState(false);
+    const [userHubs, setUserHubs] = useState<string[]>([]);
+    const [postSaveError, setPostSaveError] = useState<string | null>(null);
+
+    // ── Saves post to Supabase (with optional extra_tags) then reloads feed from DB ──
+    const handleNewPost = async (text: string, hub: string, extraTags: string[] = [], imageFile: File | null = null) => {
+        const normalizedExtras = [...new Set(extraTags.map(t => normalizeTag(t)).filter(Boolean))].slice(0, MAX_EXTRA_TAGS);
+        setPostSaveError(null);
+
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                console.warn("[handleNewPost] No authenticated user found — post not saved to Supabase.");
+                setPostSaveError("You must be signed in to post.");
+                return;
+            }
+
+            if (hubRows.length === 0) {
+                setPostSaveError("Hubs are still loading. Please wait a moment and try again.");
+                return;
+            }
+
+            const ensured = await ensurePublicUserRow(user);
+            if (!ensured.ok) {
+                setPostSaveError(ensured.message ?? "Could not prepare your profile to post.");
+                return;
+            }
+
+            const hubRow = resolveHubRowForName(hub, hubRows);
+            if (!hubRow?.id) {
+                const msg = `Could not resolve a hub for “${hub}”.`;
+                console.error("[handleNewPost]", msg);
+                setPostSaveError(msg);
+                return;
+            }
+
+            let uploadedImageUrl: string | null = null;
+            if (imageFile) {
+                const ext = imageFile.name.split(".").pop()?.toLowerCase() ?? "jpg";
+                const safeExt = ext.replace(/[^a-z0-9]/g, "") || "jpg";
+                const objectPath = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${safeExt}`;
+                const { error: uploadError } = await supabase.storage
+                    .from("post-images")
+                    .upload(objectPath, imageFile, { upsert: false });
+                if (uploadError) {
+                    setPostSaveError(`Image upload failed: ${uploadError.message}`);
+                    return;
+                }
+                const { data: publicUrlData } = supabase.storage.from("post-images").getPublicUrl(objectPath);
+                uploadedImageUrl = publicUrlData.publicUrl;
+            }
+
+            const { data: inserted, error } = await supabase
+                .from("posts")
+                .insert({
+                    user_id: user.id,
+                    body: text,
+                    hub_id: hubRow.id,
+                    post_type: "text",
+                    extra_tags: normalizedExtras.length ? normalizedExtras : [],
+                    image_url: uploadedImageUrl,
+                })
+                .select("id")
+                .single();
+
+            if (error) {
+                console.error("[handleNewPost] Supabase insert failed:", error.message);
+                setPostSaveError(error.message);
+                return;
+            }
+
+            if (inserted?.id != null) {
+                await loadPosts(hubRows);
+            }
+        } catch (err) {
+            console.error("[handleNewPost] Unexpected error:", err);
+            setPostSaveError(err instanceof Error ? err.message : "Could not save post.");
+        }
+    };
+
+
+    useEffect(() => {
+        async function loadUserHubs() {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+            const { data, error } = await supabase
+                .from("user_hubs")
+                .select("hub_id, hubs(name)")
+                .eq("user_id", user.id);
+            if (error) { console.warn("[loadUserHubs]", error.message); return; }
+            const hubs = (data ?? []).map((row: any) => row.hubs?.name).filter(Boolean);
+            console.log("[loadUserHubs] names:", hubs);
+            setUserHubs(hubs);
+        }
+        loadUserHubs();
+    }, []);
+
+    //joined hubs filter
+    const filterHubPills = useMemo(() => ["My Hubs", "All", ...hubRows.map(h => h.name)], [hubRows]);
+
+    const filtered = useMemo(() => {
+        if (activeFilter === "My Hubs") {
+            console.log("userHubs", userHubs);
+            return posts.filter(p => userHubs.includes(p.hub));
+        }
+        if (activeFilter === "All") return posts;
+        const row = hubRows.find(h => h.name === activeFilter);
+        if (row?.id != null) {
+            return posts.filter((p) => p.hubId === row.id);
+        }
+        return posts.filter(p => p.hub === activeFilter);
+    }, [posts, activeFilter, hubRows, userHubs]);
+
+    useEffect(() => {
+        const valid = new Set(filterHubPills);
+        if (!valid.has(activeFilter)) setActiveFilter("My Hubs");
+    }, [filterHubPills, activeFilter]);
+
+    const feedPosts = useMemo(() => {
+        if (!affinityReady) return filtered;
+        return rankTimelinePosts(filtered, affinity, userHubs, profileHobbySlugs);
+    }, [filtered, affinity, affinityReady, userHubs, profileHobbySlugs]);
 
     const loadPosts = useCallback(async (hubRowsForColor: HubRow[]) => {
         try {
@@ -580,118 +717,6 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
     }, []);
 
 
-
-    const { userId, sessionId } = useAnalytics();
-    const timelineDwellRef = useContentImpression({
-        userId,
-        sessionId,
-        uiLocation: "timeline",
-        metadata: { kind: "timeline_feed_screen_dwell" },
-    });
-    const [activeFilter, setActiveFilter] = useState("All");
-    const [showCompose, setShowCompose] = useState(false);
-    const [activeHub, setActiveHub] = useState<string | null>(null);
-    const [posts, setPosts] = useState<TimelinePost[]>([]);
-    const [hubRows, setHubRows] = useState<HubRow[]>([]);
-    const [loadingPosts, setLoadingPosts] = useState(true);
-    const [affinity, setAffinity] = useState<UserAffinity | null>(null);
-    const [profileHobbySlugs, setProfileHobbySlugs] = useState<string[]>([]);
-    const [affinityReady, setAffinityReady] = useState(false);
-
-    const [postSaveError, setPostSaveError] = useState<string | null>(null);
-
-    // ── Saves post to Supabase (with optional extra_tags) then reloads feed from DB ──
-    const handleNewPost = async (text: string, hub: string, extraTags: string[] = [], imageFile: File | null = null) => {
-        const normalizedExtras = [...new Set(extraTags.map(t => normalizeTag(t)).filter(Boolean))].slice(0, MAX_EXTRA_TAGS);
-        setPostSaveError(null);
-
-        try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) {
-                console.warn("[handleNewPost] No authenticated user found — post not saved to Supabase.");
-                setPostSaveError("You must be signed in to post.");
-                return;
-            }
-
-            if (hubRows.length === 0) {
-                setPostSaveError("Hubs are still loading. Please wait a moment and try again.");
-                return;
-            }
-
-            const ensured = await ensurePublicUserRow(user);
-            if (!ensured.ok) {
-                setPostSaveError(ensured.message ?? "Could not prepare your profile to post.");
-                return;
-            }
-
-            const hubRow = resolveHubRowForName(hub, hubRows);
-            if (!hubRow?.id) {
-                const msg = `Could not resolve a hub for “${hub}”.`;
-                console.error("[handleNewPost]", msg);
-                setPostSaveError(msg);
-                return;
-            }
-
-            let uploadedImageUrl: string | null = null;
-            if (imageFile) {
-                const ext = imageFile.name.split(".").pop()?.toLowerCase() ?? "jpg";
-                const safeExt = ext.replace(/[^a-z0-9]/g, "") || "jpg";
-                const objectPath = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${safeExt}`;
-                const { error: uploadError } = await supabase.storage
-                    .from("post-images")
-                    .upload(objectPath, imageFile, { upsert: false });
-                if (uploadError) {
-                    setPostSaveError(`Image upload failed: ${uploadError.message}`);
-                    return;
-                }
-                const { data: publicUrlData } = supabase.storage.from("post-images").getPublicUrl(objectPath);
-                uploadedImageUrl = publicUrlData.publicUrl;
-            }
-
-            const { data: inserted, error } = await supabase
-                .from("posts")
-                .insert({
-                    user_id: user.id,
-                    body: text,
-                    hub_id: hubRow.id,
-                    post_type: "text",
-                    extra_tags: normalizedExtras.length ? normalizedExtras : [],
-                    image_url: uploadedImageUrl,
-                })
-                .select("id")
-                .single();
-
-            if (error) {
-                console.error("[handleNewPost] Supabase insert failed:", error.message);
-                setPostSaveError(error.message);
-                return;
-            }
-
-            if (inserted?.id != null) {
-                await loadPosts(hubRows);
-            }
-        } catch (err) {
-            console.error("[handleNewPost] Unexpected error:", err);
-            setPostSaveError(err instanceof Error ? err.message : "Could not save post.");
-        }
-    };
-
-    const filterHubPills = useMemo(() => ["All", ...hubRows.map(h => h.name)], [hubRows]);
-
-    const filtered = useMemo(() => {
-        if (activeFilter === "All") return posts;
-        const row = hubRows.find(h => h.name === activeFilter);
-        if (row?.id != null) {
-            return posts.filter((p) => p.hubId === row.id);
-        }
-        return posts.filter(p => p.hub === activeFilter);
-    }, [posts, activeFilter, hubRows]);
-
-    const feedPosts = useMemo(() => {
-        if (!affinityReady) return filtered;
-        return rankTimelinePosts(filtered, affinity, joinedHubs, profileHobbySlugs);
-    }, [filtered, affinity, affinityReady, joinedHubs, profileHobbySlugs]);
-
     /* Hubs + posts + affinity follow Supabase session — not Analytics `userId` (often null if profile fetch failed). */
     useEffect(() => {
         let cancelled = false;
@@ -742,11 +767,10 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
         };
     }, [loadPosts]);
 
-    useEffect(() => {
-        const valid = new Set(filterHubPills);
-        if (!valid.has(activeFilter)) setActiveFilter("All");
-    }, [filterHubPills, activeFilter]);
 
+
+
+    //analytics and update all activity
     useEffect(() => {
         logContentEvent({
             userId,
@@ -757,16 +781,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
         });
     }, [userId, sessionId]);
 
-    if (activeHub) {
-        return (
-            <HubPage
-                hubName={activeHub}
-                joined={joinedHubs.includes(activeHub)}
-                onToggleJoin={() => onToggleJoin(activeHub)}
-                onBack={() => setActiveHub(null)}
-            />
-        );
-    }
+
 
     return (
         <div className="flex flex-1 min-h-screen" style={{ background: "var(--bg)" }}>
