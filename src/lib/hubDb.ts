@@ -16,6 +16,14 @@ export type HubRow = {
   hobby_slug?: string | null;
 };
 
+export type UserJoinedHub = {
+  categoryId: string;
+  hubId: string;
+  name: string;
+  emoji: string;
+  color: string;
+};
+
 export function hubRowToDetail(row: HubRow, items: HubItem[] = []): HubDetail {
   return {
     id: row.slug,
@@ -172,4 +180,51 @@ export async function fetchUserHubSlugs(userId: string): Promise<string[]> {
       return h?.slug ?? null;
     })
     .filter(Boolean) as string[];
+}
+
+// fetch user joined hubs with sidebar display metadata
+export async function fetchUserJoinedHubs(userId: string): Promise<UserJoinedHub[]> {
+  const { data, error } = await supabase
+    .from("user_hubs")
+    .select("joined_at, hubs!inner(slug, name, icon, gradient_from, hobbies(slug))")
+    .eq("user_id", userId)
+    .order("joined_at", { ascending: true });
+
+  if (error) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("[hubDb] fetchUserJoinedHubs", error.message);
+    }
+    return [];
+  }
+
+  return (data ?? [])
+    .map((row: Record<string, unknown>) => {
+      const rawHub = row.hubs as {
+        slug?: string | null;
+        name?: string | null;
+        icon?: string | null;
+        gradient_from?: string | null;
+        hobbies?: { slug?: string | null } | { slug?: string | null }[] | null;
+      } | { 
+        slug?: string | null;
+        name?: string | null;
+        icon?: string | null;
+        gradient_from?: string | null;
+        hobbies?: { slug?: string | null } | { slug?: string | null }[] | null;
+      }[] | null;
+      const hub = Array.isArray(rawHub) ? rawHub[0] ?? null : rawHub;
+      const hubId = hub?.slug?.trim() ?? "";
+      const hobbies = hub?.hobbies;
+      const hobby = Array.isArray(hobbies) ? hobbies[0] ?? null : hobbies ?? null;
+      const categoryId = hobby?.slug?.trim() ?? "";
+      if (!hubId || !categoryId) return null;
+      return {
+        categoryId,
+        hubId,
+        name: hub?.name?.trim() || hubId,
+        emoji: hub?.icon?.trim() || "✨",
+        color: hub?.gradient_from?.trim() || "#6366f1",
+      } as UserJoinedHub;
+    })
+    .filter((hub): hub is UserJoinedHub => hub !== null);
 }
