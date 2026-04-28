@@ -887,6 +887,7 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
                                 heightClass="h-48"
                                 post={{
                                     id: post.id,
+                                    authorId: userId ?? "",
                                     ownerId: userId ?? "",
                                     user: profile.display_name || "You",
                                     handle: profile.handle ? `@${profile.handle.replace(/^@/, "")}` : "@you",

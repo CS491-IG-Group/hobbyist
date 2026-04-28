@@ -465,6 +465,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                                         onDelete={() => { }}
                                         post={{
                                             id: post.id,
+                                            authorId: post.user_id,
                                             ownerId: post.user_id,
                                             user: author.name,
                                             handle: author.handle,
