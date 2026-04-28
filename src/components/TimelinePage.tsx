@@ -122,13 +122,17 @@ export function PostCard({
     const { userId, sessionId } = useAnalytics();
     const canDelete = userId && post.ownerId === userId;
 
-    const handleDelete = (e: React.MouseEvent) => {
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+    const handleDeleteClick = (e: React.MouseEvent) => {
         e.stopPropagation();
+        setShowDeleteConfirm(true);
+    };
 
-        const confirmed = window.confirm("Delete this post?");
-        if (!confirmed) return;
-
+    const confirmDelete = (e: React.MouseEvent) => {
+        e.stopPropagation();
         onDelete(post.id);
+        setShowDeleteConfirm(false);
     };
     const [isLiked, setIsLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(0);
@@ -272,7 +276,7 @@ export function PostCard({
                 <div className="absolute top-2.5 right-2.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
                     {canDelete && (
                         <button
-                            onClick={handleDelete}
+                            onClick={handleDeleteClick}
                             className="w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md text-white text-lg font-bold"
                             style={{ background: "rgba(239,68,68,0.75)" }}
                             title="Delete post">
@@ -331,6 +335,57 @@ export function PostCard({
                     onClose={() => setShowComments(false)}
                     onCommentPosted={() => setCommentCount(c => c + 1)}
                 />
+            )}
+
+            {showDeleteConfirm && (
+                <div
+                    className="fixed inset-0 z-[999] flex items-center justify-center p-4"
+                    style={{ background: "rgba(0,0,0,0.65)" }}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDeleteConfirm(false);
+                    }}
+                >
+                    <div
+                        className="w-full max-w-sm rounded-2xl p-5"
+                        style={{
+                            background: "var(--surface)",
+                            border: "1px solid var(--border)",
+                            boxShadow: "0 20px 60px rgba(0,0,0,0.45)",
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <h2 className="text-base font-bold mb-2" style={{ fontFamily: "Syne, sans-serif" }}>
+                            Delete post?
+                        </h2>
+
+                        <p className="text-sm mb-5" style={{ color: "var(--text-muted)" }}>
+                            This action cannot be undone.
+                        </p>
+
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={() => setShowDeleteConfirm(false)}
+                                className="px-4 py-2 rounded-xl text-sm font-semibold"
+                                style={{
+                                    background: "var(--surface2)",
+                                    color: "var(--text)",
+                                    border: "1px solid var(--border)",
+                                }}
+                            >
+                                Cancel
+                            </button>
+
+                            <button
+                                onClick={confirmDelete}
+                                className="px-4 py-2 rounded-xl text-sm font-semibold text-white"
+                                style={{ background: "rgba(239,68,68,0.95)" }}
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );
