@@ -76,7 +76,20 @@ function RatingBadge({ rating }: { rating: string }) {
 /* ------------------------------------------------------------------ */
 /*  Review card                                                        */
 /* ------------------------------------------------------------------ */
-function ReviewCard({ review }: { review: ItemReview }) {
+type DisplayReview = ItemReview & {
+    id: string;
+    isMine: boolean;
+};
+
+function ReviewCard({
+    review,
+    onDelete,
+    deleting,
+}: {
+    review: DisplayReview;
+    onDelete?: () => void;
+    deleting?: boolean;
+}) {
     return (
         <div
             className="rounded-xl p-5 transition-all"
@@ -104,9 +117,26 @@ function ReviewCard({ review }: { review: ItemReview }) {
                         </p>
                     </div>
                 </div>
-                <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                    {review.date}
-                </span>
+                <div className="flex items-center gap-2">
+                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                        {review.date}
+                    </span>
+                    {review.isMine && (
+                        <button
+                            type="button"
+                            onClick={onDelete}
+                            disabled={deleting}
+                            className="text-[11px] font-semibold px-2 py-1 rounded-md transition-all hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
+                            style={{
+                                color: "#f87171",
+                                border: "1px solid rgba(248,113,113,0.35)",
+                                background: "rgba(248,113,113,0.08)",
+                            }}
+                        >
+                            {deleting ? "Deleting..." : "Delete"}
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* Star row */}
@@ -160,10 +190,11 @@ export default function ItemDetailPage({
     const [userRating, setUserRating] = useState<number>(0);
     const [hoverRating, setHoverRating] = useState<number>(0);
     const [reviewText, setReviewText] = useState("");
-    const [reviews, setReviews] = useState<ItemReview[]>([]);
+    const [reviews, setReviews] = useState<DisplayReview[]>([]);
     const [submitted, setSubmitted] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
+    const [deletingReviewId, setDeletingReviewId] = useState<string | null>(null);
     const [authUserId, setAuthUserId] = useState<string | null>(null);
     const [lists, setLists] = useState<Array<{ id: string; title: string }>>([]);
     const [selectedListId, setSelectedListId] = useState<string>("");
@@ -254,7 +285,7 @@ export default function ItemDetailPage({
                 data: { user: authUser },
             } = await supabase.auth.getUser();
 
-            const mapped: ItemReview[] = (data ?? []).map((row: any) => {
+            const mapped: DisplayReview[] = (data ?? []).map((row: any) => {
                 const profile = Array.isArray(row.users) ? row.users[0] ?? null : row.users ?? null;
                 const displayName =
                     profile?.display_name?.trim() ||
@@ -262,11 +293,13 @@ export default function ItemDetailPage({
                     "Member";
                 const dateSource = row.updated_at ?? row.created_at;
                 return {
+                    id: String(row.id),
                     author: displayName,
                     avatar: initialsFromName(displayName),
                     rating: Number(row.rating) || 0,
                     text: row.review_text ?? "",
                     date: formatTimeAgo(dateSource),
+                    isMine: Boolean(authUser?.id && row.user_id === authUser.id),
                 };
             });
 
@@ -416,7 +449,7 @@ export default function ItemDetailPage({
 
         const { data, error: refetchError } = await supabase
             .from("item_reviews")
-            .select("id, rating, review_text, created_at, updated_at, users!user_id(display_name, handle)")
+            .select("id, rating, review_text, created_at, updated_at, user_id, users!user_id(display_name, handle)")
             .eq("item_id", itemId)
             .order("updated_at", { ascending: false });
         setSubmitting(false);
@@ -425,7 +458,7 @@ export default function ItemDetailPage({
             return;
         }
 
-        const mapped: ItemReview[] = (data ?? []).map((row: any) => {
+        const mapped: DisplayReview[] = (data ?? []).map((row: any) => {
             const profile = Array.isArray(row.users) ? row.users[0] ?? null : row.users ?? null;
             const displayName =
                 profile?.display_name?.trim() ||
@@ -433,16 +466,46 @@ export default function ItemDetailPage({
                 "Member";
             const dateSource = row.updated_at ?? row.created_at;
             return {
+                id: String(row.id),
                 author: displayName,
                 avatar: initialsFromName(displayName),
                 rating: Number(row.rating) || 0,
                 text: row.review_text ?? "",
                 date: formatTimeAgo(dateSource),
+                isMine: Boolean(row.user_id === authUser.id),
             };
         });
 
         setReviews(mapped);
         setSubmitted(true);
+    }
+
+    async function handleDeleteReview(reviewId: string) {
+        const {
+            data: { user: authUser },
+        } = await supabase.auth.getUser();
+        if (!authUser) {
+            setSubmitError("You must be signed in to delete your review.");
+            return;
+        }
+        setSubmitError(null);
+        setDeletingReviewId(reviewId);
+        const { error } = await supabase
+            .from("item_reviews")
+            .delete()
+            .eq("id", reviewId)
+            .eq("user_id", authUser.id)
+            .eq("item_id", itemId);
+        if (error) {
+            setDeletingReviewId(null);
+            setSubmitError(error.message);
+            return;
+        }
+        setDeletingReviewId(null);
+        setReviews((prev) => prev.filter((review) => review.id !== reviewId));
+        setUserRating(0);
+        setReviewText("");
+        setSubmitted(false);
     }
 
     async function handleAddToList() {
@@ -762,7 +825,12 @@ export default function ItemDetailPage({
             ) : (
                 <div className="space-y-4">
                     {allReviews.map((review, i) => (
-                        <ReviewCard key={i} review={review} />
+                        <ReviewCard
+                            key={review.id}
+                            review={review}
+                            onDelete={review.isMine ? () => void handleDeleteReview(review.id) : undefined}
+                            deleting={deletingReviewId === review.id}
+                        />
                     ))}
                 </div>
             )}
