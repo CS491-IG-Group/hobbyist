@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import Sidebar from "./Sidebar";
 import { supabase } from "../lib/supabase";
 import { AnalyticsProvider, logContentEvent } from "../lib/AnalyticsContext";
-import { joinHub, leaveHub, fetchUserHubSlugs, HubRow } from "../lib/hubDb";
+import { joinHub, leaveHub, fetchUserHubSlugs, fetchUserJoinedHubs, type UserJoinedHub } from "../lib/hubDb";
 
 
 const MainPaneLoading = () => (
@@ -215,7 +215,8 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
   }
 
   // Joined hubs — shared with TimelinePage
-  const [joinedHubs, setJoinedHubs] = useState([]);
+  const [joinedHubs, setJoinedHubs] = useState<string[]>([]);
+  const [joinedHubDetails, setJoinedHubDetails] = useState<UserJoinedHub[]>([]);
 
   useEffect(() => {
     async function loadJoinedHubs() {
@@ -234,6 +235,14 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
       setJoinedHubs(hubs);
     }
     loadJoinedHubs();
+
+    const onMembershipUpdated = () => {
+      void loadJoinedHubs();
+    };
+    window.addEventListener("hub-memberships-updated", onMembershipUpdated as EventListener);
+    return () => {
+      window.removeEventListener("hub-memberships-updated", onMembershipUpdated as EventListener);
+    };
   }, [userId]);
 
 
@@ -254,14 +263,14 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
     const { data, error } = await supabase
       .from("user_goals")
       .select(`
-        id,
-        current_value,
-        goals (
           id,
-          title,
-          target_value
-        )
-      `)
+          current_value,
+          goals (
+            id,
+            title,
+            target_value
+          )
+        `)
       .eq("user_id", userId)
       .order("created_at", { ascending: true });
 
@@ -622,6 +631,7 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
           setActiveNav={handleNav}
           onLogout={onLogout}
           unreadCount={unreadCount}
+          joinedHubs={joinedHubDetails}
           onSelectHub={(categoryId, hubId) => {
             setActiveNav("discover");
             setSubPage({ type: "hub", categoryId, hubId });

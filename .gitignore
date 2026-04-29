@@ -13,3 +13,6 @@ out
 
 # OS
 .DS_Store
+
+# Local demo SQL seeds (do not commit)
+supabase/demo_seed_local.sql

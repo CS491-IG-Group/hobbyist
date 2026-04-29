@@ -12,7 +12,9 @@ import { hubNameToHobbySlug } from "../lib/hubHobbyMap";
 import { mergePostTags, normalizeTag } from "../lib/hubTags";
 
 interface TimelinePost extends RankableTimelinePost {
+    authorId: string;
     hubId: string | null;
+    ownerId: string;
     avatar: string;
     avatarBg: string;
     userTags: string[];
@@ -109,11 +111,35 @@ function CommentIcon() {
 
 const HEIGHT_CLASSES = ["h-48", "h-56", "h-64", "h-72", "h-52", "h-60"];
 
-export function PostCard({ post, heightClass }: { post: any; heightClass: string }) {
+export function PostCard({
+    post,
+    heightClass,
+    onDelete,
+}: {
+    post: TimelinePost;
+    heightClass: string;
+    onDelete: (postId: number) => void;
+}) {
     const { userId, sessionId } = useAnalytics();
+    const canDelete = userId && post.ownerId === userId;
+
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+    const handleDeleteClick = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        setShowDeleteConfirm(true);
+    };
+
+    const confirmDelete = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        onDelete(post.id);
+        setShowDeleteConfirm(false);
+    };
     const [isLiked, setIsLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(0);
     const [commentCount, setCommentCount] = useState(0);
+    const [isFollowingAuthor, setIsFollowingAuthor] = useState(false);
+    const [followBusy, setFollowBusy] = useState(false);
     const [showComments, setShowComments] = useState(false);
     const [hovered, setHovered] = useState(false);
     const hasImage = Boolean(post.image);
@@ -131,6 +157,34 @@ export function PostCard({ post, heightClass }: { post: any; heightClass: string
         fetchStats();
     }, [post.id, userId]);
 
+    useEffect(() => {
+        const fetchFollowState = async () => {
+            if (!userId || !post.authorId || post.authorId === userId) {
+                setIsFollowingAuthor(false);
+                return;
+            }
+
+            const { data, error } = await supabase
+                .from("user_follows")
+                .select("follower_id")
+                .eq("follower_id", userId)
+                .eq("followed_id", post.authorId)
+                .eq("status", "following")
+                .maybeSingle();
+
+            if (error) {
+                if (process.env.NODE_ENV === "development") {
+                    console.warn("[timeline] follow state lookup failed", error.message);
+                }
+                return;
+            }
+
+            setIsFollowingAuthor(Boolean(data));
+        };
+
+        void fetchFollowState();
+    }, [post.authorId, userId]);
+
     // ... (Your existing handleLike remains the same)
     const handleLike = async (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -142,6 +196,54 @@ export function PostCard({ post, heightClass }: { post: any; heightClass: string
         } else {
             await supabase.from('post_likes').insert({ post_id: post.id, user_id: userId });
         }
+    };
+
+    const handleFollowToggle = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!userId || !post.authorId || post.authorId === userId || followBusy) return;
+
+        const nextFollowing = !isFollowingAuthor;
+        setFollowBusy(true);
+        setIsFollowingAuthor(nextFollowing);
+
+        if (nextFollowing) {
+            const { error } = await supabase
+                .from("user_follows")
+                .upsert(
+                    { follower_id: userId, followed_id: post.authorId, status: "following" },
+                    { onConflict: "follower_id,followed_id" }
+                );
+            if (error) {
+                setIsFollowingAuthor(false);
+                setFollowBusy(false);
+                return;
+            }
+
+            void logContentEvent({
+                userId,
+                sessionId,
+                eventType: "follow",
+                uiLocation: "timeline",
+                metadata: postAnalyticsMeta(post, {
+                    action: "follow_from_post_card",
+                    target_author_id: post.authorId,
+                    target_handle: post.handle,
+                }),
+            });
+        } else {
+            const { error } = await supabase
+                .from("user_follows")
+                .delete()
+                .eq("follower_id", userId)
+                .eq("followed_id", post.authorId);
+            if (error) {
+                setIsFollowingAuthor(true);
+                setFollowBusy(false);
+                return;
+            }
+        }
+
+        setFollowBusy(false);
     };
 
     return (
@@ -173,7 +275,19 @@ export function PostCard({ post, heightClass }: { post: any; heightClass: string
                 </div>
 
                 <div className="absolute top-2.5 right-2.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                    <button onClick={handleLike} className="w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md" style={{ background: isLiked ? "#ec489980" : "rgba(0,0,0,0.45)" }}>
+                    {canDelete && (
+                        <button
+                            onClick={handleDeleteClick}
+                            className="w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md text-white text-lg font-bold"
+                            style={{ background: "rgba(239,68,68,0.75)" }}
+                            title="Delete post">
+                            ×
+                        </button>
+                    )}
+                    <button
+                        onClick={handleLike}
+                        className="w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md"
+                        style={{ background: isLiked ? "#ec489980" : "rgba(0,0,0,0.45)" }}>
                         <HeartIcon filled={isLiked} />
                     </button>
                 </div>
@@ -191,6 +305,21 @@ export function PostCard({ post, heightClass }: { post: any; heightClass: string
                     </div>
 
                     <div className="flex items-center gap-3">
+                        {userId && post.authorId && post.authorId !== userId && (
+                            <button
+                                type="button"
+                                onClick={handleFollowToggle}
+                                disabled={followBusy}
+                                className="text-[10px] px-2 py-1 rounded-md font-semibold transition-all hover:opacity-90 disabled:opacity-60"
+                                style={{
+                                    background: isFollowingAuthor ? "rgba(16,185,129,0.12)" : "rgba(139,92,246,0.15)",
+                                    color: isFollowingAuthor ? "#10b981" : "#a78bfa",
+                                    border: isFollowingAuthor ? "1px solid rgba(16,185,129,0.2)" : "1px solid rgba(139,92,246,0.2)",
+                                }}
+                            >
+                                {followBusy ? "..." : isFollowingAuthor ? "Following" : "Follow"}
+                            </button>
+                        )}
                         <button onClick={handleLike} className="flex items-center gap-1 text-[10px]" style={{ color: isLiked ? "#ec4899" : "var(--text-muted)", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
                             <HeartIcon filled={isLiked} /> {likeCount}
                         </button>
@@ -207,6 +336,57 @@ export function PostCard({ post, heightClass }: { post: any; heightClass: string
                     onClose={() => setShowComments(false)}
                     onCommentPosted={() => setCommentCount(c => c + 1)}
                 />
+            )}
+
+            {showDeleteConfirm && (
+                <div
+                    className="fixed inset-0 z-[999] flex items-center justify-center p-4"
+                    style={{ background: "rgba(0,0,0,0.65)" }}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDeleteConfirm(false);
+                    }}
+                >
+                    <div
+                        className="w-full max-w-sm rounded-2xl p-5"
+                        style={{
+                            background: "var(--surface)",
+                            border: "1px solid var(--border)",
+                            boxShadow: "0 20px 60px rgba(0,0,0,0.45)",
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <h2 className="text-base font-bold mb-2" style={{ fontFamily: "Syne, sans-serif" }}>
+                            Delete post?
+                        </h2>
+
+                        <p className="text-sm mb-5" style={{ color: "var(--text-muted)" }}>
+                            This action cannot be undone.
+                        </p>
+
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={() => setShowDeleteConfirm(false)}
+                                className="px-4 py-2 rounded-xl text-sm font-semibold"
+                                style={{
+                                    background: "var(--surface2)",
+                                    color: "var(--text)",
+                                    border: "1px solid var(--border)",
+                                }}
+                            >
+                                Cancel
+                            </button>
+
+                            <button
+                                onClick={confirmDelete}
+                                className="px-4 py-2 rounded-xl text-sm font-semibold text-white"
+                                style={{ background: "rgba(239,68,68,0.95)" }}
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );
@@ -498,6 +678,8 @@ export default function TimelinePage() {
 
 
 
+
+
     const { userId, sessionId } = useAnalytics();
     const timelineDwellRef = useContentImpression({
         userId,
@@ -592,6 +774,23 @@ export default function TimelinePage() {
         }
     };
 
+    const handleDeletePost = async (postId: number) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { error } = await supabase
+            .from("posts")
+            .delete()
+            .eq("id", postId)
+            .eq("user_id", user.id);
+
+        if (error) {
+            console.error("Delete failed:", error.message);
+            return;
+        }
+
+        setPosts(prev => prev.filter(post => post.id !== postId));
+    };
 
     useEffect(() => {
         async function loadUserHubs() {
@@ -683,6 +882,8 @@ export default function TimelinePage() {
 
                 return {
                     id: post.id,
+                    authorId: uid,
+                    ownerId: uid,
                     user: displayUser,
                     handle: authorHandle,
                     avatar: "✨",
@@ -850,6 +1051,7 @@ export default function TimelinePage() {
                                 key={post.id}
                                 post={post}
                                 heightClass={HEIGHT_CLASSES[i % HEIGHT_CLASSES.length]}
+                                onDelete={handleDeletePost}
                             />
                         ))}
                     </div>

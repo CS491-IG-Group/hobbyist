@@ -204,6 +204,7 @@ export default function HubsProfile({ hubName, joined, onToggleJoin, onBack }: H
 
     //handle join/leave
     const handleToggleJoin = async () => {
+        if (!userId) return;
         if (isJoined) {
             const { error } = await leaveHub(userId, hubSlug);
             if (error) {
@@ -216,6 +217,9 @@ export default function HubsProfile({ hubName, joined, onToggleJoin, onBack }: H
                 console.error("Error joining hub:", error);
             }
             setIsJoined(true);
+        }
+        if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("hub-memberships-updated"));
         }
     };
 

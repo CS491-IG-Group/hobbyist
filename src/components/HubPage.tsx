@@ -184,12 +184,18 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
     }, [userId, hubId]);
 
     const handleToggleJoin = async () => {
+        if (!userId) return;
         if (isJoined) {
             const { error } = await leaveHub(userId, hubId);
             if (error) throw new Error(error);
+            setIsJoined(false);
         } else {
             const { error } = await joinHub(userId, hubId);
             if (error) throw new Error(error);
+            setIsJoined(true);
+        }
+        if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("hub-memberships-updated"));
         }
     };
 
@@ -456,19 +462,25 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                                     <PostCard
                                         key={post.id}
                                         heightClass="h-48"
+                                        onDelete={() => { }}
                                         post={{
                                             id: post.id,
+                                            authorId: post.user_id,
+                                            ownerId: post.user_id,
                                             user: author.name,
                                             handle: author.handle,
                                             avatar: "✨",
                                             avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
                                             hub: hub.name,
                                             hubId: hubId,
+                                            hobbySlug: null,
+                                            tags: [],
                                             userTags: [],
                                             hubColor: hub.gradientFrom,
                                             time: formatTimeAgo(post.created_at),
                                             text: post.body,
                                             image: post.image_url ?? null,
+                                            likes: 0,
                                             comments: 0,
                                             reposts: 0,
                                         }}
