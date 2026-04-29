@@ -219,19 +219,21 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
   const [joinedHubDetails, setJoinedHubDetails] = useState<UserJoinedHub[]>([]);
 
   useEffect(() => {
-    if (!userId) return;
-    const loadJoinedHubs = async () => {
-      try {
-        const [hubs, hubDetails] = await Promise.all([
-          fetchUserHubSlugs(userId),
-          fetchUserJoinedHubs(userId),
-        ]);
-        setJoinedHubs(hubs);
-        setJoinedHubDetails(hubDetails);
-      } catch (error) {
-        console.error("Error loading joined hubs:", error);
+    async function loadJoinedHubs() {
+      if (!userId) return;
+      const { data, error } = await supabase
+        .from("user_hubs")
+        .select("hub_id, hubs(slug)")
+        .eq("user_id", userId);
+      if (error) {
+        if (process.env.NODE_ENV === "development") {
+          console.warn("[hubDb] fetchUserHubs", error.message);
+        }
+        return;
       }
-    };
+      const hubs = data.map((row: any) => row.hubs?.slug).filter(Boolean);
+      setJoinedHubs(hubs);
+    }
     loadJoinedHubs();
 
     const onMembershipUpdated = () => {
@@ -244,29 +246,6 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
   }, [userId]);
 
 
-  const toggleJoinHub = async (hubSlug: string) => {
-    if (!userId) return;
-    const isJoined = joinedHubs.includes(hubSlug);
-    try {
-      if (isJoined) {
-        await leaveHub(userId, hubSlug);
-      } else {
-        await joinHub(userId, hubSlug);
-      }
-      // Refresh the list
-      const [updatedHubs, updatedHubDetails] = await Promise.all([
-        fetchUserHubSlugs(userId),
-        fetchUserJoinedHubs(userId),
-      ]);
-      setJoinedHubs(updatedHubs);
-      setJoinedHubDetails(updatedHubDetails);
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("hub-memberships-updated"));
-      }
-    } catch (error) {
-      console.error("Error toggling hub join:", error);
-    }
-  };
 
   // Goals (Supabase: `goals` + `user_goals`)
   const [goals, setGoals] = useState<GoalRow[]>([]);
@@ -284,14 +263,14 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
     const { data, error } = await supabase
       .from("user_goals")
       .select(`
-        id,
-        current_value,
-        goals (
           id,
-          title,
-          target_value
-        )
-      `)
+          current_value,
+          goals (
+            id,
+            title,
+            target_value
+          )
+        `)
       .eq("user_id", userId)
       .order("created_at", { ascending: true });
 
@@ -662,8 +641,6 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
         <main className="flex-1 overflow-y-auto">
           {activeNav === "timeline" ? (
             <TimelinePage
-              joinedHubs={joinedHubs}
-              onToggleJoin={toggleJoinHub}
             />
           ) : activeNav === "discover" ? (
             subPage?.type === "item" ? (

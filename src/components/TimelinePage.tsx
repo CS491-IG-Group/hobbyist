@@ -7,6 +7,7 @@ import { useContentImpression } from "../lib/useContentImpression";
 import { fetchRecommendationContext, rankTimelinePosts, type UserAffinity, type RankableTimelinePost } from "../lib/recommendations";
 import { supabase } from "../lib/supabase";
 import { fetchAllHubs, type HubRow } from "../lib/hubDb";
+import { fetchUserHubSlugs, } from "../lib/hubDb";
 import { hubNameToHobbySlug } from "../lib/hubHobbyMap";
 import { mergePostTags, normalizeTag } from "../lib/hubTags";
 
@@ -655,12 +656,9 @@ function CreatePostModal({ onClose, onPost, hubs }: {
     );
 }
 
-interface TimelinePageProps {
-    joinedHubs: string[];
-    onToggleJoin: (hubName: string) => void;
-}
 
-export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageProps) {
+
+export default function TimelinePage() {
     const formatTimeAgo = (dateString: string) => {
         const now = new Date();
         const then = new Date(dateString);
@@ -678,88 +676,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
 
     const [postsFetchError, setPostsFetchError] = useState<string | null>(null);
 
-    const loadPosts = useCallback(async (hubRowsForColor: HubRow[]) => {
-        try {
-            setLoadingPosts(true);
-            setPostsFetchError(null);
 
-            const {
-                data: { user: authUser },
-            } = await supabase.auth.getUser();
-            const currentUserId = authUser?.id ?? null;
-
-            /* `users!user_id` — required when PostgREST sees multiple posts↔users paths (e.g. posts.user_id + post_likes). */
-            const { data, error } = await supabase
-                .from("posts")
-                .select("id, body, image_url, created_at, hub_id, extra_tags, user_id, users!user_id ( handle, display_name )")
-                .order("created_at", { ascending: false });
-
-            if (error) {
-                console.error("Error loading posts:", error.message);
-                setPostsFetchError(error.message);
-                return;
-            }
-
-            const mapped = (data || []).map((post: any) => {
-                const hubRow = hubRowsForColor.find(
-                    (h) => h.id === post.hub_id || String(h.id) === String(post.hub_id)
-                );
-                const displayHub = hubRow?.name ?? "Unknown";
-                const hobbySlugFromDb =
-                    hubRow?.hobby_slug && hubRow.hobby_slug.trim()
-                        ? hubRow.hobby_slug.trim().toLowerCase()
-                        : null;
-                const hubColor =
-                    hubRow?.gradient_from ?? HUB_COLORS[displayHub] ?? "#8b5cf6";
-                const storedExtras = Array.isArray(post.extra_tags)
-                    ? (post.extra_tags as string[]).map((t) => normalizeTag(String(t))).filter(Boolean)
-                    : [];
-
-                const resolvedHobbySlug = hobbySlugFromDb ?? hubNameToHobbySlug(displayHub);
-
-                const uid = typeof post.user_id === "string" ? post.user_id : String(post.user_id ?? "");
-                const { user: displayUser, handle: authorHandle } = authorFromPostRow(
-                    uid,
-                    post.users,
-                    currentUserId
-                );
-
-                return {
-                    id: post.id,
-                    authorId: uid,
-                    ownerId: uid,
-                    user: displayUser,
-                    handle: authorHandle,
-                    avatar: "✨",
-                    avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
-                    hub: displayHub,
-                    hubId:
-                        typeof post.hub_id === "string"
-                            ? post.hub_id
-                            : post.hub_id != null
-                                ? String(post.hub_id)
-                                : null,
-                    hobbySlug: resolvedHobbySlug,
-                    tags: mergePostTags(displayHub, storedExtras, hobbySlugFromDb),
-                    userTags: storedExtras,
-                    hubColor,
-                    time: formatTimeAgo(post.created_at),
-                    text: post.body,
-                    image: post.image_url ?? null,
-                    likes: 0,
-                    comments: 0,
-                    reposts: 0,
-                };
-            });
-
-            setPosts(mapped);
-        } catch (err) {
-            console.error("Load posts error:", err);
-            setPostsFetchError(err instanceof Error ? err.message : "Could not load posts.");
-        } finally {
-            setLoadingPosts(false);
-        }
-    }, []);
 
 
 
@@ -770,16 +687,15 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
         uiLocation: "timeline",
         metadata: { kind: "timeline_feed_screen_dwell" },
     });
-    const [activeFilter, setActiveFilter] = useState("All");
+    const [activeFilter, setActiveFilter] = useState("My Hubs");
     const [showCompose, setShowCompose] = useState(false);
-    const [activeHub, setActiveHub] = useState<string | null>(null);
     const [posts, setPosts] = useState<TimelinePost[]>([]);
     const [hubRows, setHubRows] = useState<HubRow[]>([]);
     const [loadingPosts, setLoadingPosts] = useState(true);
     const [affinity, setAffinity] = useState<UserAffinity | null>(null);
     const [profileHobbySlugs, setProfileHobbySlugs] = useState<string[]>([]);
     const [affinityReady, setAffinityReady] = useState(false);
-
+    const [userHubs, setUserHubs] = useState<string[]>([]);
     const [postSaveError, setPostSaveError] = useState<string | null>(null);
 
     // ── Saves post to Supabase (with optional extra_tags) then reloads feed from DB ──
@@ -876,21 +792,131 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
         setPosts(prev => prev.filter(post => post.id !== postId));
     };
 
-    const filterHubPills = useMemo(() => ["All", ...hubRows.map(h => h.name)], [hubRows]);
+    useEffect(() => {
+        async function loadUserHubs() {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+            const { data, error } = await supabase
+                .from("user_hubs")
+                .select("hub_id, hubs(name)")
+                .eq("user_id", user.id);
+            if (error) { console.warn("[loadUserHubs]", error.message); return; }
+            const hubs = (data ?? []).map((row: any) => row.hubs?.name).filter(Boolean);
+            console.log("[loadUserHubs] names:", hubs);
+            setUserHubs(hubs);
+        }
+        loadUserHubs();
+    }, []);
+
+    //joined hubs filter
+    const filterHubPills = useMemo(() => ["My Hubs", "All", ...hubRows.map(h => h.name)], [hubRows]);
 
     const filtered = useMemo(() => {
+        if (activeFilter === "My Hubs") {
+            console.log("userHubs", userHubs);
+            return posts.filter(p => userHubs.includes(p.hub));
+        }
         if (activeFilter === "All") return posts;
         const row = hubRows.find(h => h.name === activeFilter);
         if (row?.id != null) {
             return posts.filter((p) => p.hubId === row.id);
         }
         return posts.filter(p => p.hub === activeFilter);
-    }, [posts, activeFilter, hubRows]);
+    }, [posts, activeFilter, hubRows, userHubs]);
+
+    useEffect(() => {
+        const valid = new Set(filterHubPills);
+        if (!valid.has(activeFilter)) setActiveFilter("My Hubs");
+    }, [filterHubPills, activeFilter]);
 
     const feedPosts = useMemo(() => {
         if (!affinityReady) return filtered;
-        return rankTimelinePosts(filtered, affinity, joinedHubs, profileHobbySlugs);
-    }, [filtered, affinity, affinityReady, joinedHubs, profileHobbySlugs]);
+        return rankTimelinePosts(filtered, affinity, userHubs, profileHobbySlugs);
+    }, [filtered, affinity, affinityReady, userHubs, profileHobbySlugs]);
+
+    const loadPosts = useCallback(async (hubRowsForColor: HubRow[]) => {
+        try {
+            setLoadingPosts(true);
+            setPostsFetchError(null);
+
+            const {
+                data: { user: authUser },
+            } = await supabase.auth.getUser();
+            const currentUserId = authUser?.id ?? null;
+
+            /* `users!user_id` — required when PostgREST sees multiple posts↔users paths (e.g. posts.user_id + post_likes). */
+            const { data, error } = await supabase
+                .from("posts")
+                .select("id, body, image_url, created_at, hub_id, extra_tags, user_id, users!user_id ( handle, display_name )")
+                .order("created_at", { ascending: false });
+
+            if (error) {
+                console.error("Error loading posts:", error.message);
+                setPostsFetchError(error.message);
+                return;
+            }
+
+            const mapped = (data || []).map((post: any) => {
+                const hubRow = hubRowsForColor.find(
+                    (h) => h.id === post.hub_id || String(h.id) === String(post.hub_id)
+                );
+                const displayHub = hubRow?.name ?? "Unknown";
+                const hobbySlugFromDb =
+                    hubRow?.hobby_slug && hubRow.hobby_slug.trim()
+                        ? hubRow.hobby_slug.trim().toLowerCase()
+                        : null;
+                const hubColor =
+                    hubRow?.gradient_from ?? HUB_COLORS[displayHub] ?? "#8b5cf6";
+                const storedExtras = Array.isArray(post.extra_tags)
+                    ? (post.extra_tags as string[]).map((t) => normalizeTag(String(t))).filter(Boolean)
+                    : [];
+
+                const resolvedHobbySlug = hobbySlugFromDb ?? hubNameToHobbySlug(displayHub);
+
+                const uid = typeof post.user_id === "string" ? post.user_id : String(post.user_id ?? "");
+                const { user: displayUser, handle: authorHandle } = authorFromPostRow(
+                    uid,
+                    post.users,
+                    currentUserId
+                );
+
+                return {
+                    id: post.id,
+                    authorId: uid,
+                    ownerId: uid,
+                    user: displayUser,
+                    handle: authorHandle,
+                    avatar: "✨",
+                    avatarBg: "linear-gradient(135deg, #1e1b4b, #4c1d95)",
+                    hub: displayHub,
+                    hubId:
+                        typeof post.hub_id === "string"
+                            ? post.hub_id
+                            : post.hub_id != null
+                                ? String(post.hub_id)
+                                : null,
+                    hobbySlug: resolvedHobbySlug,
+                    tags: mergePostTags(displayHub, storedExtras, hobbySlugFromDb),
+                    userTags: storedExtras,
+                    hubColor,
+                    time: formatTimeAgo(post.created_at),
+                    text: post.body,
+                    image: post.image_url ?? null,
+                    likes: 0,
+                    comments: 0,
+                    reposts: 0,
+                };
+            });
+
+            setPosts(mapped);
+        } catch (err) {
+            console.error("Load posts error:", err);
+            setPostsFetchError(err instanceof Error ? err.message : "Could not load posts.");
+        } finally {
+            setLoadingPosts(false);
+        }
+    }, []);
+
 
     /* Hubs + posts + affinity follow Supabase session — not Analytics `userId` (often null if profile fetch failed). */
     useEffect(() => {
@@ -942,11 +968,10 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
         };
     }, [loadPosts]);
 
-    useEffect(() => {
-        const valid = new Set(filterHubPills);
-        if (!valid.has(activeFilter)) setActiveFilter("All");
-    }, [filterHubPills, activeFilter]);
 
+
+
+    //analytics and update all activity
     useEffect(() => {
         logContentEvent({
             userId,
@@ -957,16 +982,7 @@ export default function TimelinePage({ joinedHubs, onToggleJoin }: TimelinePageP
         });
     }, [userId, sessionId]);
 
-    if (activeHub) {
-        return (
-            <HubPage
-                hubName={activeHub}
-                joined={joinedHubs.includes(activeHub)}
-                onToggleJoin={() => onToggleJoin(activeHub)}
-                onBack={() => setActiveHub(null)}
-            />
-        );
-    }
+
 
     return (
         <div className="flex flex-1 min-h-screen" style={{ background: "var(--bg)" }}>
