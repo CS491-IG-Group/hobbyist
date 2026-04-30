@@ -149,8 +149,10 @@ export default function CategoryPage({
         const load = async () => {
             setLoading(true);
             setDbHubRows([]);
-            const rows = await fetchHubsForHobbySlug(categoryId);
-            const { data: hobby } = await supabase.from("hobbies").select("name, desc").eq("slug", categoryId).maybeSingle();
+            const [rows, hobby] = await Promise.all([
+                fetchHubsForHobbySlug(categoryId),
+                supabase.from("hobbies").select("name, desc").eq("slug", categoryId).maybeSingle(),
+            ]);
             if (!cancelled) {
                 setDbHubRows(rows);
                 if (hobby && typeof hobby === "object" && "name" in hobby) {

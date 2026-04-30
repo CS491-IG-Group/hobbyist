@@ -905,8 +905,17 @@ export default function ProfilePage({ onOpenSettings }: { onOpenSettings?: () =>
                                     likes: 0,
                                     comments: 0,
                                     reposts: 0,
+                                    likeCount: 0,
+                                    isLiked: false,
+                                    commentCount: 0,
+                                    isFollowing: false,
                                 }}
-                                onDelete={() => {}}
+                                onDelete={() => { }}
+                                initialLikeCount={0}
+                                initialIsLiked={false}
+                                initialCommentCount={0}
+                                initialIsFollowing={false}
+
                             />
                         ))}
                     </div>
