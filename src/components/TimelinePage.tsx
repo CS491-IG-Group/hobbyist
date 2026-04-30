@@ -24,6 +24,10 @@ interface TimelinePost extends RankableTimelinePost {
     image: string | null;
     comments: number;
     reposts: number;
+    likeCount: number;
+    isLiked: boolean;
+    commentCount: number;
+    isFollowing: boolean;
 }
 
 /** Selected hub name → `public.hubs.id` (primary key), same list as the compose UI. */
@@ -115,10 +119,19 @@ export function PostCard({
     post,
     heightClass,
     onDelete,
+    initialLikeCount,
+    initialIsLiked,
+    initialCommentCount,
+    initialIsFollowing,
+
 }: {
     post: TimelinePost;
     heightClass: string;
     onDelete: (postId: number) => void;
+    initialLikeCount: number;
+    initialIsLiked: boolean;
+    initialCommentCount: number;
+    initialIsFollowing: boolean;
 }) {
     const { userId, sessionId } = useAnalytics();
     const canDelete = userId && post.ownerId === userId;
@@ -135,55 +148,16 @@ export function PostCard({
         onDelete(post.id);
         setShowDeleteConfirm(false);
     };
-    const [isLiked, setIsLiked] = useState(false);
-    const [likeCount, setLikeCount] = useState(0);
-    const [commentCount, setCommentCount] = useState(0);
-    const [isFollowingAuthor, setIsFollowingAuthor] = useState(false);
+    const [isLiked, setIsLiked] = useState(initialIsLiked ?? false);
+    const [likeCount, setLikeCount] = useState(initialLikeCount ?? 0);
+    const [commentCount, setCommentCount] = useState(initialCommentCount ?? 0);
+    const [isFollowingAuthor, setIsFollowingAuthor] = useState(initialIsFollowing ?? false);
     const [followBusy, setFollowBusy] = useState(false);
     const [showComments, setShowComments] = useState(false);
     const [hovered, setHovered] = useState(false);
     const hasImage = Boolean(post.image);
 
-    // ... (Your existing useEffect for stats remains the same)
-    useEffect(() => {
-        const fetchStats = async () => {
-            if (!userId) return;
-            const { count: likes, data: likesData } = await supabase.from('post_likes').select('*', { count: 'exact' }).eq('post_id', post.id);
-            const { count: comments } = await supabase.from('comments').select('*', { count: 'exact', head: true }).eq('post_id', post.id);
-            setLikeCount(likes || 0);
-            setCommentCount(comments || 0);
-            setIsLiked(likesData?.some(l => l.user_id === userId) ?? false);
-        };
-        fetchStats();
-    }, [post.id, userId]);
 
-    useEffect(() => {
-        const fetchFollowState = async () => {
-            if (!userId || !post.authorId || post.authorId === userId) {
-                setIsFollowingAuthor(false);
-                return;
-            }
-
-            const { data, error } = await supabase
-                .from("user_follows")
-                .select("follower_id")
-                .eq("follower_id", userId)
-                .eq("followed_id", post.authorId)
-                .eq("status", "following")
-                .maybeSingle();
-
-            if (error) {
-                if (process.env.NODE_ENV === "development") {
-                    console.warn("[timeline] follow state lookup failed", error.message);
-                }
-                return;
-            }
-
-            setIsFollowingAuthor(Boolean(data));
-        };
-
-        void fetchFollowState();
-    }, [post.authorId, userId]);
 
     // ... (Your existing handleLike remains the same)
     const handleLike = async (e: React.MouseEvent) => {
@@ -908,7 +882,26 @@ export default function TimelinePage() {
                 };
             });
 
-            setPosts(mapped);
+
+            // Batch fetch all stats in 3 queries instead of 3×N
+            const postIds = mapped.map(p => p.id);
+            const [{ data: likesData }, { data: commentsData }, { data: followsData }] = await Promise.all([
+                supabase.from('post_likes').select('post_id, user_id').in('post_id', postIds),
+                supabase.from('comments').select('post_id').in('post_id', postIds),
+                supabase.from('user_follows').select('follower_id, followed_id').eq('follower_id', currentUserId).in('followed_id', mapped.map(p => p.authorId)),
+            ]);
+            // Build lookup maps and attach to each post: likeCount, isLiked, commentCount, isFollowing
+
+
+            const mappedWithStats = mapped.map(p => ({
+                ...p,
+                likeCount: likesData?.filter(l => l.post_id === p.id).length ?? 0,
+                isLiked: likesData?.some(l => l.post_id === p.id && l.user_id === currentUserId) ?? false,
+                commentCount: commentsData?.filter(c => c.post_id === p.id).length ?? 0,
+                isFollowing: followsData?.some(f => f.followed_id === p.authorId) ?? false,
+            }));
+
+            setPosts(mappedWithStats);
         } catch (err) {
             console.error("Load posts error:", err);
             setPostsFetchError(err instanceof Error ? err.message : "Could not load posts.");
@@ -952,11 +945,6 @@ export default function TimelinePage() {
                 setAffinityReady(false);
             }
         }
-
-        void (async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            await refreshForAuthUser(user?.id ?? null);
-        })();
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             void refreshForAuthUser(session?.user?.id ?? null);
@@ -1052,6 +1040,10 @@ export default function TimelinePage() {
                                 post={post}
                                 heightClass={HEIGHT_CLASSES[i % HEIGHT_CLASSES.length]}
                                 onDelete={handleDeletePost}
+                                initialLikeCount={post.likeCount}
+                                initialIsLiked={post.isLiked}
+                                initialCommentCount={post.commentCount}
+                                initialIsFollowing={post.isFollowing}
                             />
                         ))}
                     </div>
