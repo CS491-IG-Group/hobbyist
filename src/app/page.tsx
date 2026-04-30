@@ -202,10 +202,24 @@ export default function Home() {
   }, [view]);
 
   async function handleLogout() {
-    await supabase.auth.signOut();
+    // Optimistic logout for snappy UX: clear local app state immediately,
+    // then invalidate Supabase session in the background.
     setCurrentUserId(null);
     setOnboardingUser(null);
+    setManualLoginMode(false);
+    manualAuthInProgressRef.current = false;
     setView("landing");
+    try {
+      await withTimeout(
+        supabase.auth.signOut({ scope: "local" }),
+        1500,
+        "signOut"
+      );
+    } catch (e) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[auth] signOut timed out/failed after local logout", e);
+      }
+    }
   }
 
   // ── Loading ──────────────────────────────────────────────────────────
