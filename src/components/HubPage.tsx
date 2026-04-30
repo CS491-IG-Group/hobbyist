@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import { getHubById, getCategoryById, type HubDetail, type HubItem } from "./hubData";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { useContentImpression } from "../lib/useContentImpression";
-import { fetchHubBySlug, hubRowToDetail } from "../lib/hubDb";
+import { fetchHubBySlug, HubRow, hubRowToDetail } from "../lib/hubDb";
 import { joinHub, leaveHub, fetchUserHubSlugs } from "../lib/hubDb";
 import { supabase } from "../lib/supabase";
 import { PostCard } from "./TimelinePage";
@@ -126,62 +126,65 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
     const mockHub = getHubById(categoryId, hubId);
     const category = getCategoryById(categoryId);
 
+    const [hubRow, setHubRow] = useState<HubRow | null>(null);
+
     useEffect(() => {
         let cancelled = false;
         const load = async () => {
             setHubLoading(true);
             const row = await fetchHubBySlug(hubId);
+            setHubRow(row);
             const mock = getHubById(categoryId, hubId);
-            if (cancelled) return;
-            if (row) {
-                const { data: dbItems, error: dbItemsErr } = await supabase
-                    .from("items")
-                    .select("id, name, item_type, description")
-                    .eq("hub_id", row.id)
-                    .order("created_at", { ascending: false });
 
-                const items: HubItem[] = dbItemsErr
-                    ? (mock?.items ?? [])
-                    : ((dbItems ?? []) as DbItemRow[]).map((item) => ({
-                        name: item.name,
-                        year: item.item_type?.trim() || "item",
-                        rating: "N/A",
-                        description: item.description ?? "",
-                    }));
-                const sidebarItems: HubSidebarItem[] = dbItemsErr
-                    ? (mock?.items ?? []).map((item, idx) => ({
-                        id: -(idx + 1),
-                        name: item.name,
-                        year: item.year,
-                        rating: item.rating,
-                    }))
-                    : ((dbItems ?? []) as DbItemRow[]).map((item) => ({
-                        id: item.id,
-                        name: item.name,
-                        year: item.item_type?.trim() || "item",
-                        rating: "N/A",
-                    }));
-                setHubItems(sidebarItems);
-                setDbHub(hubRowToDetail(row, items));
-            } else {
-                setHubItems([]);
-                setDbHub(null);
+            if (!cancelled) {
+                if (row) {
+                    const [{ data: dbItems, error: dbItemsErr }, slugs] = await Promise.all([
+                        supabase
+                            .from("items")
+                            .select("id, name, item_type, description")
+                            .eq("hub_id", row.id)
+                            .order("created_at", { ascending: false }),
+                        userId ? fetchUserHubSlugs(userId) : Promise.resolve([]),
+                    ]);
+
+                    if (cancelled) return;
+
+                    const items: HubItem[] = dbItemsErr
+                        ? (mock?.items ?? [])
+                        : ((dbItems ?? []) as DbItemRow[]).map((item) => ({
+                            name: item.name,
+                            year: item.item_type?.trim() || "item",
+                            rating: "N/A",
+                            description: item.description ?? "",
+                        }));
+                    const sidebarItems: HubSidebarItem[] = dbItemsErr
+                        ? (mock?.items ?? []).map((item, idx) => ({
+                            id: -(idx + 1),
+                            name: item.name,
+                            year: item.year,
+                            rating: item.rating,
+                        }))
+                        : ((dbItems ?? []) as DbItemRow[]).map((item) => ({
+                            id: item.id,
+                            name: item.name,
+                            year: item.item_type?.trim() || "item",
+                            rating: "N/A",
+                        }));
+
+                    setHubItems(sidebarItems);
+                    setDbHub(hubRowToDetail(row, items));
+                    setIsJoined(slugs.includes(hubId));
+                } else {
+                    setHubItems([]);
+                    setDbHub(null);
+                    setIsJoined(false);
+                }
+                setHubLoading(false);
             }
-            setHubLoading(false);
         };
         void load();
-        return () => {
-            cancelled = true;
-        };
-    }, [categoryId, hubId]);
-
-    useEffect(() => {
-        if (!userId) return;
-
-        fetchUserHubSlugs(userId).then((slugs) => {
-            setIsJoined(slugs.includes(hubId));
-        });
-    }, [userId, hubId]);
+        return () => { cancelled = true; };
+    }, [categoryId, hubId, userId]);
 
     const handleToggleJoin = async () => {
         if (!userId) return;
@@ -208,7 +211,6 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
         const loadPosts = async () => {
             setPostsLoading(true);
             setPostsError(null);
-            const hubRow = await fetchHubBySlug(hubId);
             if (!hubRow?.id) {
                 if (!cancelled) {
                     setHubPosts([]);
@@ -220,7 +222,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
             const { data, error } = await supabase
                 .from("posts")
                 .select("id, body, image_url, created_at, user_id, users!user_id ( handle, display_name )")
-                .eq("hub_id", hubRow.id)
+                .eq("hub_slug", hubId)
                 .order("created_at", { ascending: activeTab === "popular" });
 
             if (cancelled) return;
@@ -240,7 +242,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
         return () => {
             cancelled = true;
         };
-    }, [hubId, activeTab]);
+    }, [hubRow?.id, activeTab]);
 
 
     const hub = dbHub ?? mockHub;
@@ -483,7 +485,15 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
                                             likes: 0,
                                             comments: 0,
                                             reposts: 0,
+                                            likeCount: 0,
+                                            isLiked: false,
+                                            commentCount: 0,
+                                            isFollowing: false,
                                         }}
+                                        initialLikeCount={0}
+                                        initialIsLiked={false}
+                                        initialCommentCount={0}
+                                        initialIsFollowing={false}
                                     />
                                 );
                             })

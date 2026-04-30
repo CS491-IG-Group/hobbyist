@@ -51,6 +51,7 @@ async function loadUsersProfile(userId: string): Promise<
   | { status: "ok"; row: UsersProfileRow | null }
   | { status: "failed" }
 > {
+
   for (let attempt = 0; attempt < PROFILE_FETCH_ATTEMPTS; attempt++) {
     try {
       const res = await withTimeout(
@@ -81,6 +82,7 @@ async function loadUsersProfile(userId: string): Promise<
       }
     }
   }
+
   return { status: "failed" };
 }
 
@@ -92,6 +94,8 @@ export default function Home() {
   const manualLoginModeRef = useRef(false);
   const viewRef = useRef<View>("landing");
   const manualAuthInProgressRef = useRef(false);
+  const profileCacheRef = useRef<UsersProfileRow | null>(null);
+
 
   useEffect(() => {
     // Product default: always start in dark mode on fresh app load.
@@ -171,7 +175,6 @@ export default function Home() {
   }
 
   useEffect(() => {
-    void checkSession("bootstrap");
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === "TOKEN_REFRESHED") return;
