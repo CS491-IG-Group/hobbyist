@@ -222,7 +222,7 @@ export default function HubPage({ categoryId, hubId, onBack, onSelectItem }: Hub
             const { data, error } = await supabase
                 .from("posts")
                 .select("id, body, image_url, created_at, user_id, users!user_id ( handle, display_name )")
-                .eq("hub_slug", hubId)
+                .eq("hub_id", hubRow.id)
                 .order("created_at", { ascending: activeTab === "popular" });
 
             if (cancelled) return;
