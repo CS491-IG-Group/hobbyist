@@ -91,6 +91,7 @@ function postAnalyticsMeta(
 
 const MAX_EXTRA_TAGS = 8;
 const MAX_TAG_LEN = 32;
+const TIMELINE_PAGE_SIZE = 150;
 
 const HUB_COLORS: Record<string, string> = {
     Cars: "#3b82f6", Fitness: "#10b981", Technology: "#f59e0b",
@@ -827,7 +828,8 @@ export default function TimelinePage() {
             const { data, error } = await supabase
                 .from("posts")
                 .select("id, body, image_url, created_at, hub_id, extra_tags, user_id, users!user_id ( handle, display_name )")
-                .order("created_at", { ascending: false });
+                .order("created_at", { ascending: false })
+                .limit(TIMELINE_PAGE_SIZE);
 
             if (error) {
                 console.error("Error loading posts:", error.message);
@@ -888,22 +890,50 @@ export default function TimelinePage() {
             });
 
 
-            // Batch fetch all stats in 3 queries instead of 3×N
-            const postIds = mapped.map(p => p.id);
+            // Batch fetch all stats in 3 queries instead of 3×N.
+            const postIds = mapped.map((p) => p.id);
+            if (postIds.length === 0) {
+                setPosts([]);
+                return;
+            }
+
+            const authorIds = [...new Set(mapped.map((p) => p.authorId).filter(Boolean))];
             const [{ data: likesData }, { data: commentsData }, { data: followsData }] = await Promise.all([
-                supabase.from('post_likes').select('post_id, user_id').in('post_id', postIds),
-                supabase.from('comments').select('post_id').in('post_id', postIds),
-                supabase.from('user_follows').select('follower_id, followed_id').eq('follower_id', currentUserId).in('followed_id', mapped.map(p => p.authorId)),
+                supabase.from("post_likes").select("post_id, user_id").in("post_id", postIds),
+                supabase.from("comments").select("post_id").in("post_id", postIds),
+                currentUserId && authorIds.length > 0
+                    ? supabase
+                        .from("user_follows")
+                        .select("followed_id")
+                        .eq("follower_id", currentUserId)
+                        .in("followed_id", authorIds)
+                    : Promise.resolve({ data: [], error: null }),
             ]);
-            // Build lookup maps and attach to each post: likeCount, isLiked, commentCount, isFollowing
 
+            const likeCountByPost = new Map<number, number>();
+            const likedPostIds = new Set<number>();
+            for (const like of likesData ?? []) {
+                const postId = Number(like.post_id);
+                likeCountByPost.set(postId, (likeCountByPost.get(postId) ?? 0) + 1);
+                if (currentUserId && like.user_id === currentUserId) likedPostIds.add(postId);
+            }
 
-            const mappedWithStats = mapped.map(p => ({
+            const commentCountByPost = new Map<number, number>();
+            for (const comment of commentsData ?? []) {
+                const postId = Number(comment.post_id);
+                commentCountByPost.set(postId, (commentCountByPost.get(postId) ?? 0) + 1);
+            }
+
+            const followingAuthorIds = new Set<string>(
+                (followsData ?? []).map((f: any) => String(f.followed_id)).filter(Boolean)
+            );
+
+            const mappedWithStats = mapped.map((p) => ({
                 ...p,
-                likeCount: likesData?.filter(l => l.post_id === p.id).length ?? 0,
-                isLiked: likesData?.some(l => l.post_id === p.id && l.user_id === currentUserId) ?? false,
-                commentCount: commentsData?.filter(c => c.post_id === p.id).length ?? 0,
-                isFollowing: followsData?.some(f => f.followed_id === p.authorId) ?? false,
+                likeCount: likeCountByPost.get(p.id) ?? 0,
+                isLiked: likedPostIds.has(p.id),
+                commentCount: commentCountByPost.get(p.id) ?? 0,
+                isFollowing: followingAuthorIds.has(p.authorId),
             }));
 
             setPosts(mappedWithStats);
