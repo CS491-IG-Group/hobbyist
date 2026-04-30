@@ -3,10 +3,10 @@ import React, { useState, useRef, useEffect } from "react";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
 import { supabase } from "../lib/supabase";
 
-type Message = { id: number; from: "me" | "them"; text: string; time: string };
+type Message = { id: string; from: "me" | "them"; text: string; time: string };
 
 type Conversation = {
-    id: number;
+    id: string;
     user: string;
     handle: string;
     avatar: string;
@@ -26,107 +26,6 @@ type FollowedUser = {
     display_name: string;
     handle: string;
 };
-
-const CONVERSATIONS: Conversation[] = [
-    {
-        id: 1,
-        user: "Jordan Lee",
-        handle: "@jordanlee",
-        avatar: "💪",
-        avatarBg: "linear-gradient(135deg, #064e3b, #065f46)",
-        online: true,
-        sharedHub: "Fitness",
-        hubColor: "#10b981",
-        lastMessage: "bro that PR was insane 🔥",
-        time: "2m",
-        unread: 3,
-        messages: [
-            { id: 1, from: "them", text: "did you hit the gym today?", time: "10:12 AM" },
-            { id: 2, from: "me", text: "yeah just got back, hit a new deadlift PR!", time: "10:13 AM" },
-            { id: 3, from: "them", text: "no way what was it", time: "10:13 AM" },
-            { id: 4, from: "me", text: "200kg finally after 2 years of grinding", time: "10:15 AM" },
-            { id: 5, from: "them", text: "that is absolutely insane dude congrats", time: "10:30 AM" },
-            { id: 6, from: "them", text: "bro that PR was insane 🔥", time: "10:31 AM" },
-        ],
-    },
-    {
-        id: 2,
-        user: "Sam Chen",
-        handle: "@samchen",
-        avatar: "💻",
-        avatarBg: "linear-gradient(135deg, #1c1917, #44403c)",
-        online: true,
-        sharedHub: "Technology",
-        hubColor: "#f59e0b",
-        lastMessage: "M4 benchmarks are actually crazy 👀",
-        time: "1h",
-        unread: 1,
-        messages: [
-            { id: 1, from: "them", text: "have you seen the new MacBook benchmarks", time: "9:00 AM" },
-            { id: 2, from: "me", text: "not yet what happened", time: "9:02 AM" },
-            { id: 3, from: "them", text: "M4 is beating workstation chips from 2022", time: "9:03 AM" },
-            { id: 4, from: "me", text: "no way that is insane", time: "9:45 AM" },
-            { id: 5, from: "them", text: "M4 benchmarks are actually crazy 👀", time: "9:46 AM" },
-        ],
-    },
-    {
-        id: 3,
-        user: "Alex Rivera",
-        handle: "@alexrivera",
-        avatar: "🚗",
-        avatarBg: "linear-gradient(135deg, #1e1b4b, #1e40af)",
-        online: false,
-        sharedHub: "Cars",
-        hubColor: "#3b82f6",
-        lastMessage: "track day next weekend, you in?",
-        time: "3h",
-        unread: 0,
-        messages: [
-            { id: 1, from: "them", text: "just got my suspension tuned", time: "7:00 AM" },
-            { id: 2, from: "me", text: "how does it feel now", time: "7:05 AM" },
-            { id: 3, from: "them", text: "night and day difference honestly", time: "7:06 AM" },
-            { id: 4, from: "them", text: "track day next weekend, you in?", time: "8:30 AM" },
-        ],
-    },
-    {
-        id: 4,
-        user: "Maya Patel",
-        handle: "@mayapatel",
-        avatar: "🎬",
-        avatarBg: "linear-gradient(135deg, #831843, #9d174d)",
-        online: false,
-        sharedHub: "Movies",
-        hubColor: "#ec4899",
-        lastMessage: "Dune 2 was a masterpiece no notes 🎥",
-        time: "1d",
-        unread: 0,
-        messages: [
-            { id: 1, from: "me", text: "have you seen Dune Part 2 yet", time: "Yesterday" },
-            { id: 2, from: "them", text: "yes I saw it in IMAX it was incredible", time: "Yesterday" },
-            { id: 3, from: "me", text: "Villeneuve is on another level", time: "Yesterday" },
-            { id: 4, from: "them", text: "Dune 2 was a masterpiece no notes 🎥", time: "Yesterday" },
-        ],
-    },
-    {
-        id: 5,
-        user: "Chris Booker",
-        handle: "@chrisbooker",
-        avatar: "📸",
-        avatarBg: "linear-gradient(135deg, #1e3a5f, #1e40af)",
-        online: true,
-        sharedHub: "Photography",
-        hubColor: "#6366f1",
-        lastMessage: "film photography hits different 🎞️",
-        time: "2d",
-        unread: 0,
-        messages: [
-            { id: 1, from: "them", text: "shot a whole roll on my Contax this weekend", time: "2 days ago" },
-            { id: 2, from: "me", text: "film or digital", time: "2 days ago" },
-            { id: 3, from: "them", text: "film obviously lol", time: "2 days ago" },
-            { id: 4, from: "them", text: "film photography hits different 🎞️", time: "2 days ago" },
-        ],
-    },
-];
 
 function colorFromSeed(seed: string): string {
     let hash = 0;
@@ -148,6 +47,29 @@ function initialsFromName(name: string): string {
     if (parts.length === 0) return "👤";
     if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
     return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
+
+function withAtPrefix(handle: string): string {
+    return handle.startsWith("@") ? handle : `@${handle}`;
+}
+
+function formatMessageTime(isoTime: string): string {
+    return new Date(isoTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatRelativeTime(isoTime: string): string {
+    const diffMs = Date.now() - new Date(isoTime).getTime();
+    const mins = Math.max(1, Math.floor(diffMs / (1000 * 60)));
+    if (mins < 60) return `${mins}m`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d`;
+    return new Date(isoTime).toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function isLocalConversationId(id: string): boolean {
+    return id.startsWith("local-");
 }
 
 function SendIcon() {
@@ -174,7 +96,7 @@ function ChatWindow({
 }: {
     convo: Conversation;
     onBack: () => void;
-    onAppendMessage: (convoId: number, msg: Message) => void;
+    onAppendMessage: (convoId: string, body: string) => Promise<boolean>;
 }) {
     const { userId, sessionId } = useAnalytics();
     const messages = convo.messages;
@@ -185,7 +107,7 @@ function ChatWindow({
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
-    const send = () => {
+    const send = async () => {
         if (!input.trim()) return;
         const body = input.trim();
         void logContentEvent({
@@ -201,15 +123,8 @@ function ChatWindow({
                 conversation_id: convo.id,
             },
         });
-        const nextId =
-            messages.length === 0 ? 1 : Math.max(...messages.map((m) => m.id)) + 1;
-        onAppendMessage(convo.id, {
-            id: nextId,
-            from: "me",
-            text: body,
-            time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        });
-        setInput("");
+        const ok = await onAppendMessage(convo.id, body);
+        if (ok) setInput("");
     };
 
     return (
@@ -301,7 +216,9 @@ function ChatWindow({
                         style={{ color: "var(--text)", caretColor: "#a78bfa" }}
                     />
                     <button
-                        onClick={send}
+                        onClick={() => {
+                            void send();
+                        }}
                         className="w-8 h-8 rounded-xl flex items-center justify-center transition-all hover:opacity-80"
                         style={{
                             background: input.trim() ? "var(--gradient-btn)" : "var(--surface)",
@@ -317,8 +234,9 @@ function ChatWindow({
 
 export default function NicheFeed() {
     const { userId, sessionId } = useAnalytics();
-    const [selectedId, setSelectedId] = useState<number | null>(null);
-    const [convos, setConvos] = useState(CONVERSATIONS);
+    const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [convos, setConvos] = useState<Conversation[]>([]);
+    const [authUserId, setAuthUserId] = useState<string | null>(null);
     const [followedUsers, setFollowedUsers] = useState<FollowedUser[]>([]);
     const [search, setSearch] = useState("");
     const selected =
@@ -336,31 +254,37 @@ export default function NicheFeed() {
 
     useEffect(() => {
         let cancelled = false;
-
-        async function loadFollowedUsers() {
-            let followerId = userId;
-
-            if (!followerId) {
-                const {
-                    data: { user },
-                } = await supabase.auth.getUser();
-                followerId = user?.id ?? null;
+        async function hydrateAuthUser() {
+            if (userId) {
+                setAuthUserId(userId);
+                return;
             }
+            const {
+                data: { user },
+            } = await supabase.auth.getUser();
+            if (!cancelled) setAuthUserId(user?.id ?? null);
+        }
+        void hydrateAuthUser();
+        return () => {
+            cancelled = true;
+        };
+    }, [userId]);
 
-            if (!followerId) return;
-
+    useEffect(() => {
+        let cancelled = false;
+        async function loadFollowedUsers() {
+            if (!authUserId) {
+                if (!cancelled) setFollowedUsers([]);
+                return;
+            }
             const { data: followRows, error: followErr } = await supabase
                 .from("user_follows")
                 .select("followed_id")
-                .eq("follower_id", followerId)
+                .eq("follower_id", authUserId)
                 .eq("status", "following");
-
             if (followErr || cancelled) return;
 
-            const targetIds = (followRows ?? [])
-                .map((row: any) => row.followed_id as string)
-                .filter(Boolean);
-
+            const targetIds = (followRows ?? []).map((row: any) => String(row.followed_id)).filter(Boolean);
             if (targetIds.length === 0) {
                 if (!cancelled) setFollowedUsers([]);
                 return;
@@ -370,39 +294,130 @@ export default function NicheFeed() {
                 .from("users")
                 .select("id, display_name, handle")
                 .in("id", targetIds);
-
             if (usersErr || cancelled) return;
 
             const usersById = new Map(
                 (usersData ?? []).map((u: any) => [
-                    u.id as string,
+                    String(u.id),
                     {
-                        id: u.id as string,
+                        id: String(u.id),
                         display_name: String(u.display_name ?? ""),
                         handle: String(u.handle ?? ""),
                     },
                 ]),
             );
-
             const ordered = targetIds
                 .map((id) => usersById.get(id))
                 .filter((u): u is FollowedUser => Boolean(u));
 
-            if (!cancelled) {
-                setFollowedUsers(ordered);
-            }
+            if (!cancelled) setFollowedUsers(ordered);
         }
-
         void loadFollowedUsers();
-
         return () => {
             cancelled = true;
         };
-    }, [userId]);
+    }, [authUserId]);
+
+    useEffect(() => {
+        let cancelled = false;
+        async function loadConversations() {
+            if (!authUserId) {
+                if (!cancelled) {
+                    setConvos([]);
+                    setSelectedId(null);
+                }
+                return;
+            }
+
+            const { data: convoRows, error: convoErr } = await supabase
+                .from("orbit_conversations")
+                .select("id, user_a_id, user_b_id, last_message, last_message_at, created_at")
+                .or(`user_a_id.eq.${authUserId},user_b_id.eq.${authUserId}`)
+                .order("last_message_at", { ascending: false, nullsFirst: false })
+                .order("created_at", { ascending: false });
+
+            if (convoErr || cancelled) return;
+
+            const otherUserIds = Array.from(
+                new Set(
+                    (convoRows ?? []).map((row: any) =>
+                        row.user_a_id === authUserId ? String(row.user_b_id) : String(row.user_a_id),
+                    ),
+                ),
+            );
+
+            const { data: profilesData } = otherUserIds.length
+                ? await supabase.from("users").select("id, display_name, handle").in("id", otherUserIds)
+                : { data: [] as any[] };
+
+            const profileById = new Map(
+                (profilesData ?? []).map((u: any) => [
+                    String(u.id),
+                    { id: String(u.id), display_name: String(u.display_name ?? ""), handle: String(u.handle ?? "") },
+                ]),
+            );
+
+            const conversationIds = (convoRows ?? []).map((row: any) => String(row.id));
+            const { data: messageRows } = conversationIds.length
+                ? await supabase
+                      .from("orbit_messages")
+                      .select("id, conversation_id, sender_id, body, created_at")
+                      .in("conversation_id", conversationIds)
+                      .order("created_at", { ascending: true })
+                : { data: [] as any[] };
+
+            const messagesByConversation = new Map<string, Message[]>();
+            for (const row of messageRows ?? []) {
+                const convoId = String(row.conversation_id);
+                const arr = messagesByConversation.get(convoId) ?? [];
+                arr.push({
+                    id: String(row.id),
+                    from: String(row.sender_id) === authUserId ? "me" : "them",
+                    text: String(row.body ?? ""),
+                    time: formatMessageTime(String(row.created_at)),
+                });
+                messagesByConversation.set(convoId, arr);
+            }
+
+            const mapped: Conversation[] = (convoRows ?? []).map((row: any) => {
+                const otherId = row.user_a_id === authUserId ? String(row.user_b_id) : String(row.user_a_id);
+                const profile = profileById.get(otherId);
+                const displayName = profile?.display_name || "Unknown user";
+                const handle = withAtPrefix(profile?.handle || "unknown");
+                const lastAt = String(row.last_message_at || row.created_at);
+                const msgs = messagesByConversation.get(String(row.id)) ?? [];
+                return {
+                    id: String(row.id),
+                    user: displayName,
+                    handle,
+                    avatar: initialsFromName(displayName),
+                    avatarBg: gradientFromSeed(otherId),
+                    online: false,
+                    sharedHub: "Following",
+                    hubColor: "#8b5cf6",
+                    lastMessage: String(row.last_message ?? "Start your first message"),
+                    time: formatRelativeTime(lastAt),
+                    unread: 0,
+                    messages: msgs,
+                    followedUserId: otherId,
+                };
+            });
+
+            if (!cancelled) {
+                setConvos(mapped);
+                setSelectedId((prev) => (prev && mapped.some((c) => c.id === prev) ? prev : prev ? null : prev));
+            }
+        }
+        void loadConversations();
+        return () => {
+            cancelled = true;
+        };
+    }, [authUserId]);
 
     const filtered = convos.filter(c =>
         c.user.toLowerCase().includes(search.toLowerCase()) ||
-        c.sharedHub.toLowerCase().includes(search.toLowerCase())
+        c.sharedHub.toLowerCase().includes(search.toLowerCase()) ||
+        c.handle.toLowerCase().includes(search.toLowerCase())
     );
 
     const followedUserSuggestions = (() => {
@@ -436,34 +451,163 @@ export default function NicheFeed() {
         setConvos((prev) => prev.map((c) => (c.id === convo.id ? { ...c, unread: 0 } : c)));
     };
 
-    const appendMessage = (convoId: number, msg: Message) => {
+    const appendMessage = async (convoId: string, body: string) => {
+        if (!authUserId) return false;
+
+        if (isLocalConversationId(convoId)) {
+            const localMessage: Message = {
+                id: `local-msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                from: "me",
+                text: body,
+                time: formatMessageTime(new Date().toISOString()),
+            };
+            setConvos((prev) =>
+                prev.map((c) =>
+                    c.id === convoId
+                        ? {
+                              ...c,
+                              messages: [...c.messages, localMessage],
+                              lastMessage: body,
+                              time: "1m",
+                          }
+                        : c,
+                ),
+            );
+            return true;
+        }
+
+        const { data: inserted, error } = await supabase
+            .from("orbit_messages")
+            .insert({
+                conversation_id: convoId,
+                sender_id: authUserId,
+                body,
+            })
+            .select("id, body, created_at")
+            .single();
+
+        if (error || !inserted) {
+            const fallbackMessage: Message = {
+                id: `local-msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                from: "me",
+                text: body,
+                time: formatMessageTime(new Date().toISOString()),
+            };
+            setConvos((prev) =>
+                prev.map((c) =>
+                    c.id === convoId
+                        ? {
+                              ...c,
+                              messages: [...c.messages, fallbackMessage],
+                              lastMessage: body,
+                              time: "1m",
+                          }
+                        : c,
+                ),
+            );
+            return true;
+        }
+
+        const createdAt = String(inserted.created_at);
         setConvos((prev) =>
             prev.map((c) => {
                 if (c.id !== convoId) return c;
                 return {
                     ...c,
-                    messages: [...c.messages, msg],
-                    lastMessage: msg.text,
-                    time: "Just now",
+                    messages: [
+                        ...c.messages,
+                        {
+                            id: String(inserted.id),
+                            from: "me",
+                            text: String(inserted.body),
+                            time: formatMessageTime(createdAt),
+                        },
+                    ],
+                    lastMessage: String(inserted.body),
+                    time: formatRelativeTime(createdAt),
                 };
             }),
         );
+        return true;
     };
 
-    const startConversationWithFollowedUser = (person: FollowedUser) => {
+    const startConversationWithFollowedUser = async (person: FollowedUser) => {
+        if (!authUserId) return;
         const existing = convos.find((c) => c.followedUserId === person.id);
         if (existing) {
             selectConvo(existing);
             return;
         }
 
-        const nextId =
-            convos.length === 0 ? 1 : Math.max(...convos.map((c) => c.id)) + 1;
-        const normalizedHandle = person.handle.startsWith("@")
-            ? person.handle
-            : `@${person.handle}`;
+        const [userA, userB] = [authUserId, person.id].sort();
+        const { data: existingRow, error: findErr } = await supabase
+            .from("orbit_conversations")
+            .select("id, created_at")
+            .eq("user_a_id", userA)
+            .eq("user_b_id", userB)
+            .maybeSingle();
+        if (findErr) {
+            const normalizedHandle = withAtPrefix(person.handle);
+            const localId = `local-${person.id}`;
+            const localConvo: Conversation = {
+                id: localId,
+                user: person.display_name || normalizedHandle.replace(/^@/, ""),
+                handle: normalizedHandle,
+                avatar: initialsFromName(person.display_name || normalizedHandle),
+                avatarBg: gradientFromSeed(person.id),
+                online: false,
+                sharedHub: "Following",
+                hubColor: "#8b5cf6",
+                lastMessage: "Start your first message",
+                time: "0m",
+                unread: 0,
+                messages: [],
+                followedUserId: person.id,
+            };
+            setConvos((prev) => [localConvo, ...prev.filter((c) => c.id !== localId)]);
+            setSelectedId(localConvo.id);
+            return;
+        }
+
+        let conversationId = existingRow?.id as string | undefined;
+        if (!conversationId) {
+            const { data: inserted, error: insertErr } = await supabase
+                .from("orbit_conversations")
+                .insert({
+                    user_a_id: userA,
+                    user_b_id: userB,
+                    created_by: authUserId,
+                })
+                .select("id")
+                .single();
+            if (insertErr || !inserted) {
+                const normalizedHandleFallback = withAtPrefix(person.handle);
+                const localId = `local-${person.id}`;
+                const localConvo: Conversation = {
+                    id: localId,
+                    user: person.display_name || normalizedHandleFallback.replace(/^@/, ""),
+                    handle: normalizedHandleFallback,
+                    avatar: initialsFromName(person.display_name || normalizedHandleFallback),
+                    avatarBg: gradientFromSeed(person.id),
+                    online: false,
+                    sharedHub: "Following",
+                    hubColor: "#8b5cf6",
+                    lastMessage: "Start your first message",
+                    time: "0m",
+                    unread: 0,
+                    messages: [],
+                    followedUserId: person.id,
+                };
+                setConvos((prev) => [localConvo, ...prev.filter((c) => c.id !== localId)]);
+                setSelectedId(localConvo.id);
+                return;
+            }
+            conversationId = String(inserted.id);
+        }
+
+        const normalizedHandle = withAtPrefix(person.handle);
         const newConvo: Conversation = {
-            id: nextId,
+            id: conversationId,
             user: person.display_name || normalizedHandle.replace(/^@/, ""),
             handle: normalizedHandle,
             avatar: initialsFromName(person.display_name || normalizedHandle),
@@ -472,13 +616,13 @@ export default function NicheFeed() {
             sharedHub: "Following",
             hubColor: "#8b5cf6",
             lastMessage: "Start your first message",
-            time: "Now",
+            time: "0m",
             unread: 0,
             messages: [],
             followedUserId: person.id,
         };
 
-        setConvos((prev) => [newConvo, ...prev]);
+        setConvos((prev) => [newConvo, ...prev.filter((c) => c.id !== newConvo.id)]);
         setSelectedId(newConvo.id);
     };
 
@@ -521,7 +665,9 @@ export default function NicheFeed() {
                                 {followedUserSuggestions.map((person) => (
                                     <button
                                         key={person.id}
-                                        onClick={() => startConversationWithFollowedUser(person)}
+                                        onClick={() => {
+                                            void startConversationWithFollowedUser(person);
+                                        }}
                                         className="w-full text-left px-3 py-2 rounded-xl transition-all hover:opacity-90"
                                         style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}
                                     >
