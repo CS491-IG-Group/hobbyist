@@ -219,21 +219,19 @@ export default function DashboardPage({ onLogout, authUserId }: Props) {
   const [joinedHubDetails, setJoinedHubDetails] = useState<UserJoinedHub[]>([]);
 
   useEffect(() => {
-    async function loadJoinedHubs() {
-      if (!userId) return;
-      const { data, error } = await supabase
-        .from("user_hubs")
-        .select("hub_id, hubs(slug)")
-        .eq("user_id", userId);
-      if (error) {
-        if (process.env.NODE_ENV === "development") {
-          console.warn("[hubDb] fetchUserHubs", error.message);
-        }
-        return;
+    if (!userId) return;
+    const loadJoinedHubs = async () => {
+      try {
+        const [hubs, hubDetails] = await Promise.all([
+          fetchUserHubSlugs(userId),
+          fetchUserJoinedHubs(userId),
+        ]);
+        setJoinedHubs(hubs);
+        setJoinedHubDetails(hubDetails);
+      } catch (error) {
+        console.error("Error loading joined hubs:", error);
       }
-      const hubs = data.map((row: any) => row.hubs?.slug).filter(Boolean);
-      setJoinedHubs(hubs);
-    }
+    };
     loadJoinedHubs();
 
     const onMembershipUpdated = () => {
