@@ -782,8 +782,13 @@ export default function TimelinePage() {
         loadUserHubs();
     }, []);
 
-    //joined hubs filter
-    const filterHubPills = useMemo(() => ["My Hubs", "All", ...hubRows.map(h => h.name)], [hubRows]);
+    // Joined hubs filter pills (keep My Hubs always visible).
+    const filterHubPills = useMemo(() => {
+        const joinedHubNames = hubRows
+            .map((h) => h.name)
+            .filter((name) => userHubs.includes(name));
+        return ["My Hubs", ...joinedHubNames];
+    }, [hubRows, userHubs]);
 
     const filtered = useMemo(() => {
         if (activeFilter === "My Hubs") {
