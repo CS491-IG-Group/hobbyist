@@ -1,8 +1,33 @@
 "use client";
 import React, { useState, useRef, useEffect } from "react";
 import { useAnalytics, logContentEvent } from "../lib/AnalyticsContext";
+import { supabase } from "../lib/supabase";
 
-const CONVERSATIONS = [
+type Message = { id: number; from: "me" | "them"; text: string; time: string };
+
+type Conversation = {
+    id: number;
+    user: string;
+    handle: string;
+    avatar: string;
+    avatarBg: string;
+    online: boolean;
+    sharedHub: string;
+    hubColor: string;
+    lastMessage: string;
+    time: string;
+    unread: number;
+    messages: Message[];
+    followedUserId?: string;
+};
+
+type FollowedUser = {
+    id: string;
+    display_name: string;
+    handle: string;
+};
+
+const CONVERSATIONS: Conversation[] = [
     {
         id: 1,
         user: "Jordan Lee",
@@ -103,8 +128,27 @@ const CONVERSATIONS = [
     },
 ];
 
-type Message = { id: number; from: string; text: string; time: string };
-type Conversation = typeof CONVERSATIONS[0];
+function colorFromSeed(seed: string): string {
+    let hash = 0;
+    for (let i = 0; i < seed.length; i += 1) {
+        hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const hue = Math.abs(hash) % 360;
+    return `hsl(${hue}, 65%, 45%)`;
+}
+
+function gradientFromSeed(seed: string): string {
+    const primary = colorFromSeed(seed);
+    const secondary = colorFromSeed(`${seed}-secondary`);
+    return `linear-gradient(135deg, ${primary}, ${secondary})`;
+}
+
+function initialsFromName(name: string): string {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return "👤";
+    if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
 
 function SendIcon() {
     return (
@@ -123,9 +167,17 @@ function BackIcon() {
     );
 }
 
-function ChatWindow({ convo, onBack }: { convo: Conversation; onBack: () => void }) {
+function ChatWindow({
+    convo,
+    onBack,
+    onAppendMessage,
+}: {
+    convo: Conversation;
+    onBack: () => void;
+    onAppendMessage: (convoId: number, msg: Message) => void;
+}) {
     const { userId, sessionId } = useAnalytics();
-    const [messages, setMessages] = useState<Message[]>(convo.messages);
+    const messages = convo.messages;
     const [input, setInput] = useState("");
     const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -149,12 +201,14 @@ function ChatWindow({ convo, onBack }: { convo: Conversation; onBack: () => void
                 conversation_id: convo.id,
             },
         });
-        setMessages(prev => [...prev, {
-            id: prev.length + 1,
+        const nextId =
+            messages.length === 0 ? 1 : Math.max(...messages.map((m) => m.id)) + 1;
+        onAppendMessage(convo.id, {
+            id: nextId,
             from: "me",
             text: body,
             time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        }]);
+        });
         setInput("");
     };
 
@@ -237,7 +291,12 @@ function ChatWindow({ convo, onBack }: { convo: Conversation; onBack: () => void
                         placeholder={`Message ${convo.user.split(" ")[0]}...`}
                         value={input}
                         onChange={e => setInput(e.target.value)}
-                        onKeyDown={e => e.key === "Enter" && send()}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                                e.preventDefault();
+                                send();
+                            }
+                        }}
                         className="flex-1 bg-transparent outline-none text-sm"
                         style={{ color: "var(--text)", caretColor: "#a78bfa" }}
                     />
@@ -258,9 +317,12 @@ function ChatWindow({ convo, onBack }: { convo: Conversation; onBack: () => void
 
 export default function NicheFeed() {
     const { userId, sessionId } = useAnalytics();
-    const [selected, setSelected] = useState<Conversation | null>(null);
+    const [selectedId, setSelectedId] = useState<number | null>(null);
     const [convos, setConvos] = useState(CONVERSATIONS);
+    const [followedUsers, setFollowedUsers] = useState<FollowedUser[]>([]);
     const [search, setSearch] = useState("");
+    const selected =
+        selectedId === null ? null : convos.find((c) => c.id === selectedId) ?? null;
 
     useEffect(() => {
         void logContentEvent({
@@ -272,10 +334,91 @@ export default function NicheFeed() {
         });
     }, [userId, sessionId]);
 
+    useEffect(() => {
+        let cancelled = false;
+
+        async function loadFollowedUsers() {
+            let followerId = userId;
+
+            if (!followerId) {
+                const {
+                    data: { user },
+                } = await supabase.auth.getUser();
+                followerId = user?.id ?? null;
+            }
+
+            if (!followerId) return;
+
+            const { data: followRows, error: followErr } = await supabase
+                .from("user_follows")
+                .select("followed_id")
+                .eq("follower_id", followerId)
+                .eq("status", "following");
+
+            if (followErr || cancelled) return;
+
+            const targetIds = (followRows ?? [])
+                .map((row: any) => row.followed_id as string)
+                .filter(Boolean);
+
+            if (targetIds.length === 0) {
+                if (!cancelled) setFollowedUsers([]);
+                return;
+            }
+
+            const { data: usersData, error: usersErr } = await supabase
+                .from("users")
+                .select("id, display_name, handle")
+                .in("id", targetIds);
+
+            if (usersErr || cancelled) return;
+
+            const usersById = new Map(
+                (usersData ?? []).map((u: any) => [
+                    u.id as string,
+                    {
+                        id: u.id as string,
+                        display_name: String(u.display_name ?? ""),
+                        handle: String(u.handle ?? ""),
+                    },
+                ]),
+            );
+
+            const ordered = targetIds
+                .map((id) => usersById.get(id))
+                .filter((u): u is FollowedUser => Boolean(u));
+
+            if (!cancelled) {
+                setFollowedUsers(ordered);
+            }
+        }
+
+        void loadFollowedUsers();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [userId]);
+
     const filtered = convos.filter(c =>
         c.user.toLowerCase().includes(search.toLowerCase()) ||
         c.sharedHub.toLowerCase().includes(search.toLowerCase())
     );
+
+    const followedUserSuggestions = (() => {
+        const query = search.trim().toLowerCase();
+        const existingFollowedIds = new Set(
+            convos.map((c) => c.followedUserId).filter(Boolean),
+        );
+        return followedUsers.filter((u) => {
+            if (existingFollowedIds.has(u.id)) return false;
+            if (!query) return true;
+            return (
+                u.display_name.toLowerCase().includes(query) ||
+                u.handle.toLowerCase().includes(query)
+            );
+        });
+    })();
 
     const selectConvo = (convo: Conversation) => {
         void logContentEvent({
@@ -289,8 +432,54 @@ export default function NicheFeed() {
                 shared_hub: convo.sharedHub,
             },
         });
-        setSelected(convo);
-        setConvos(prev => prev.map(c => c.id === convo.id ? { ...c, unread: 0 } : c));
+        setSelectedId(convo.id);
+        setConvos((prev) => prev.map((c) => (c.id === convo.id ? { ...c, unread: 0 } : c)));
+    };
+
+    const appendMessage = (convoId: number, msg: Message) => {
+        setConvos((prev) =>
+            prev.map((c) => {
+                if (c.id !== convoId) return c;
+                return {
+                    ...c,
+                    messages: [...c.messages, msg],
+                    lastMessage: msg.text,
+                    time: "Just now",
+                };
+            }),
+        );
+    };
+
+    const startConversationWithFollowedUser = (person: FollowedUser) => {
+        const existing = convos.find((c) => c.followedUserId === person.id);
+        if (existing) {
+            selectConvo(existing);
+            return;
+        }
+
+        const nextId =
+            convos.length === 0 ? 1 : Math.max(...convos.map((c) => c.id)) + 1;
+        const normalizedHandle = person.handle.startsWith("@")
+            ? person.handle
+            : `@${person.handle}`;
+        const newConvo: Conversation = {
+            id: nextId,
+            user: person.display_name || normalizedHandle.replace(/^@/, ""),
+            handle: normalizedHandle,
+            avatar: initialsFromName(person.display_name || normalizedHandle),
+            avatarBg: gradientFromSeed(person.id),
+            online: false,
+            sharedHub: "Following",
+            hubColor: "#8b5cf6",
+            lastMessage: "Start your first message",
+            time: "Now",
+            unread: 0,
+            messages: [],
+            followedUserId: person.id,
+        };
+
+        setConvos((prev) => [newConvo, ...prev]);
+        setSelectedId(newConvo.id);
     };
 
     return (
@@ -323,6 +512,28 @@ export default function NicheFeed() {
 
                 {/* List */}
                 <div className="flex-1 overflow-y-auto px-2">
+                    {followedUserSuggestions.length > 0 && (
+                        <div className="px-3 py-2">
+                            <p className="text-[11px] uppercase tracking-wide mb-2" style={{ color: "var(--text-muted)" }}>
+                                Start chat with people you follow
+                            </p>
+                            <div className="space-y-1">
+                                {followedUserSuggestions.map((person) => (
+                                    <button
+                                        key={person.id}
+                                        onClick={() => startConversationWithFollowedUser(person)}
+                                        className="w-full text-left px-3 py-2 rounded-xl transition-all hover:opacity-90"
+                                        style={{ background: "var(--surface2)", border: "1px solid var(--border)" }}
+                                    >
+                                        <p className="text-sm font-semibold truncate">{person.display_name || "Unknown user"}</p>
+                                        <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
+                                            {person.handle.startsWith("@") ? person.handle : `@${person.handle}`}
+                                        </p>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                     {filtered.map(convo => (
                         <button
                             key={convo.id}
@@ -372,7 +583,11 @@ export default function NicheFeed() {
             <div className={`flex-1 ${selected ? "flex" : "hidden lg:flex"} flex-col`}
                 style={{ background: "var(--surface)", height: "100%" }}>
                 {selected ? (
-                    <ChatWindow convo={selected} onBack={() => setSelected(null)} />
+                    <ChatWindow
+                        convo={selected}
+                        onBack={() => setSelectedId(null)}
+                        onAppendMessage={appendMessage}
+                    />
                 ) : (
                     <div className="flex-1 flex flex-col items-center justify-center gap-3"
                         style={{ color: "var(--text-muted)" }}>
