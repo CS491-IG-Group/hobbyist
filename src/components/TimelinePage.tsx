@@ -244,8 +244,8 @@ export function PostCard({
                     <p
                         className="text-xs leading-relaxed text-center"
                         style={{
-                            color: "#fff",
-                            textShadow: "0 1px 2px rgba(0,0,0,0.45)",
+                            color: "var(--text)",
+                            textShadow: "0 1px 2px rgba(0,0,0,0.15)",
                             maxWidth: "90%",
                         }}
                     >
