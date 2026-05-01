@@ -505,18 +505,24 @@ function CreatePostModal({ onClose, onPost, hubs }: {
                     <div className="mb-5">
                         <p className="text-xs font-semibold mb-2" style={{ color: "var(--text-muted)" }}>Post to hub</p>
                         <div className="flex flex-wrap gap-2">
-                            {hubs.map(hub => (
-                                <button key={hub.slug}
-                                    onClick={() => setSelectedHub(selectedHub === hub.name ? "" : hub.name)}
-                                    className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
-                                    style={{
-                                        background: selectedHub === hub.name ? "var(--gradient-btn)" : "var(--surface2)",
-                                        color: selectedHub === hub.name ? "#fff" : "var(--text-muted)",
-                                        border: `1px solid ${selectedHub === hub.name ? "transparent" : "var(--border)"}`,
-                                    }}>
-                                    {hub.name}
-                                </button>
-                            ))}
+                            {hubs.length === 0 ? (
+                                <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                                    You haven't joined any hubs yet. Join a hub to start posting!
+                                </p>
+                            ) : (
+                                hubs.map(hub => (
+                                    <button key={hub.slug}
+                                        onClick={() => setSelectedHub(selectedHub === hub.name ? "" : hub.name)}
+                                        className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
+                                        style={{
+                                            background: selectedHub === hub.name ? "var(--gradient-btn)" : "var(--surface2)",
+                                            color: selectedHub === hub.name ? "#fff" : "var(--text-muted)",
+                                            border: `1px solid ${selectedHub === hub.name ? "transparent" : "var(--border)"}`,
+                                        }}>
+                                        {hub.name}
+                                    </button>
+                                ))
+                            )}
                         </div>
                     </div>
                     <div className="mb-5">
@@ -1205,7 +1211,7 @@ export default function TimelinePage() {
                 <CreatePostModal
                     onClose={() => setShowCompose(false)}
                     onPost={(text, hub, tags, imageFile) => void handleNewPost(text, hub, tags, imageFile)}
-                    hubs={hubRows}
+                    hubs={hubRows.filter(h => userHubs.includes(h.name))}
                 />
             )}
         </div>
