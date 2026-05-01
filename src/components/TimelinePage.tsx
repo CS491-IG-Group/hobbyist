@@ -222,14 +222,22 @@ export function PostCard({
     };
 
     return (
-        <div className="break-inside-avoid mb-4 rounded-2xl overflow-hidden cursor-pointer group relative"
-            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+        <div className="break-inside-avoid mb-4 rounded-2xl overflow-hidden cursor-pointer group relative transition-all duration-300 hover:shadow-[0_0_20px_rgba(167,139,250,0.1)]"
+            style={{
+                background: "var(--surface)",
+                // We make the border more visible by default and highlight it on hover
+                border: hovered ? `1px solid ${post.hubColor}` : "1px solid rgba(255,255,255,0.15)",
+                transform: hovered ? "translateY(-2px)" : "none"
+            }}
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}>
 
             {/* IMAGE / HEADER BLOCK */}
-            <div className={`relative ${hasImage ? `${heightClass} overflow-hidden` : "min-h-[120px] px-6 pt-12 pb-5 flex items-center justify-center"}`}
-                style={{ background: !hasImage ? `linear-gradient(135deg, ${post.hubColor}30, ${post.hubColor}10)` : "transparent" }}>
+            <div
+                onDoubleClick={handleLike} // <--- Add this line
+                className={`relative ${hasImage ? `${heightClass} overflow-hidden` : "min-h-[120px] px-6 pt-12 pb-5 flex items-center justify-center"}`}
+                style={{ background: !hasImage ? `linear-gradient(135deg, ${post.hubColor}30, ${post.hubColor}10)` : "transparent" }}
+            >
                 {hasImage ? (
                     <img src={post.image} alt="Post attachment" className="w-full h-full object-cover transition-transform duration-500" style={{ transform: hovered ? "scale(1.05)" : "scale(1)" }} />
                 ) : (
@@ -275,7 +283,14 @@ export function PostCard({
                 )}
                 <div className="flex items-center justify-between gap-2 mt-2">
                     <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-lg flex items-center justify-center text-xs" style={{ background: post.avatarBg }}>{post.avatar}</div>
+                        <div className="relative">
+                            <div className="w-6 h-6 rounded-lg flex items-center justify-center text-xs shadow-inner"
+                                style={{ background: post.avatarBg }}>
+                                {post.avatar}
+                            </div>
+                            {/* Active Indicator: Logic based on your preference, showing green for now */}
+                            <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[var(--surface)] bg-green-500 shadow-[0_0_5px_rgba(34,197,94,0.5)]"></span>
+                        </div>
                         <div><p className="text-xs font-semibold">{post.user}</p></div>
                     </div>
 
