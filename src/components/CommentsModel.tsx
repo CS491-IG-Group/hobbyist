@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "../lib/supabase";
 
 interface Props {
@@ -14,8 +15,13 @@ export default function CommentsModal({ postId, onClose, onCommentPosted }: Prop
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [mounted, setMounted] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     useEffect(() => {
         const fetchComments = async () => {
@@ -87,7 +93,9 @@ export default function CommentsModal({ postId, onClose, onCommentPosted }: Prop
         return `${Math.floor(h / 24)}d ago`;
     };
 
-    return (
+    if (!mounted) return null;
+
+    return createPortal((
         <div
             className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
             style={{ background: "rgba(0,0,0,0.75)" }}
@@ -181,5 +189,5 @@ export default function CommentsModal({ postId, onClose, onCommentPosted }: Prop
                 </div>
             </div>
         </div>
-    );
+    ), document.body);
 }
